@@ -238,12 +238,14 @@ public partial class MainWindow : Window
             benchmarkService.ValidatePresentMon();
             var pairs = SelectedTagInt(BenchmarkPairsCombo, 3);
             var seconds = SelectedTagInt(BenchmarkDurationCombo, 30);
-            benchmarkSession = new AbBenchmarkSession(game, pairs, seconds);
+            var useEcoQos = PersonaEcoQosCheck.IsChecked == true;
+            var useMemoryPriority = PersonaMemoryCheck.IsChecked == true;
+            benchmarkSession = new AbBenchmarkSession(game, pairs, seconds, useEcoQos, useMemoryPriority);
             benchmarkPendingPlan = null;
             benchmarkPassArmed = false;
             benchmarkCaptureRunning = false;
             systemEvents.WatchProcessExit(game.Id);
-            BenchmarkStatusText.Text = $"Sesión creada para {game.Name} · {pairs} pares · {seconds}s por pasada. Pulsa «Preparar siguiente pasada».";
+            BenchmarkStatusText.Text = $"Sesión creada para {game.Name} · {pairs} pares · {seconds}s por pasada · ON: EcoQoS={(useEcoQos ? "sí" : "no")}, Memory Priority={(useMemoryPriority ? "sí" : "no")}. Estas opciones quedan congeladas para toda la sesión.";
             BenchmarkResultsText.Text = "Aún no hay capturas. El resultado se calcula por pares y se compara con el ruido de las pasadas OFF.";
             UpdateBenchmarkPlanText();
         }
@@ -269,8 +271,8 @@ public partial class MainWindow : Window
             {
                 PersonaStatus.Text = persona.Start(
                     benchmarkSession.Game,
-                    PersonaEcoQosCheck.IsChecked == true,
-                    PersonaMemoryCheck.IsChecked == true);
+                    benchmarkSession.UseEcoQos,
+                    benchmarkSession.UseMemoryPriority);
             }
             else
             {
@@ -377,8 +379,6 @@ public partial class MainWindow : Window
                 return;
             }
 
-            // Una sesión A/B es dueña de la lógica de foco mientras está abierta.
-            // Así evitamos que Gaming Persona se active fuera de una pasada ON preparada.
             return;
         }
 
@@ -518,6 +518,7 @@ public partial class MainWindow : Window
         var done = benchmarkSession.Results.Select(x => x.Sequence).ToHashSet();
         var next = benchmarkSession.Next?.Sequence;
         var sb = new StringBuilder();
+        sb.AppendLine($"ON congelado: EcoQoS={(benchmarkSession.UseEcoQos ? "sí" : "no")} · Memory Priority={(benchmarkSession.UseMemoryPriority ? "sí" : "no")}");
         foreach (var item in benchmarkSession.Plan)
         {
             var marker = done.Contains(item.Sequence) ? "✓" : item.Sequence == next ? "→" : "·";
@@ -651,8 +652,8 @@ public partial class MainWindow : Window
         RestoreButton.IsEnabled = !busy && optimizer.HasBackup && !personaActive && !gateRunning && !benchmarkInProgress;
         RefreshProcessesButton.IsEnabled = !busy && !personaLocked && !gateRunning && !benchmarkInProgress;
         GameProcessCombo.IsEnabled = !busy && !personaLocked && !gateRunning && !benchmarkInProgress;
-        PersonaEcoQosCheck.IsEnabled = !busy && !personaLocked && !gateRunning && !benchmarkPassArmed && !benchmarkCaptureRunning;
-        PersonaMemoryCheck.IsEnabled = !busy && !personaLocked && !gateRunning && !benchmarkPassArmed && !benchmarkCaptureRunning;
+        PersonaEcoQosCheck.IsEnabled = !busy && !personaLocked && !gateRunning && !benchmarkInProgress;
+        PersonaMemoryCheck.IsEnabled = !busy && !personaLocked && !gateRunning && !benchmarkInProgress;
         StartPersonaButton.IsEnabled = !busy && !personaLocked && !gateRunning && !benchmarkInProgress && systemEvents.ForegroundHookAvailable && GameProcessCombo.SelectedItem is GameProcessCandidate;
         StopPersonaButton.IsEnabled = !busy && !benchmarkInProgress && (personaActive || pendingRestore);
         ScanInterferenceButton.IsEnabled = !busy && !gateRunning && !benchmarkCaptureRunning;
