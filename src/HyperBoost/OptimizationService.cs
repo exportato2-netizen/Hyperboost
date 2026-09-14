@@ -51,9 +51,10 @@ public sealed class OptimizationService
         try
         {
             var b = JsonSerializer.Deserialize<BackupSnapshot>(await File.ReadAllTextAsync(LastBackupPath));
-            if (b is null || !ValidateBackup(b, out var reason))
+            var reason = "contenido vacío";
+            if (b is null || !ValidateBackup(b, out reason))
             {
-                Log("Backup rechazado: " + (b is null ? "contenido vacío" : reason));
+                Log("Backup rechazado: " + reason);
                 return null;
             }
             return b;
