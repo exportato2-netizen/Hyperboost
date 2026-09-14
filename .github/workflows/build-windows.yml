@@ -24,6 +24,35 @@ jobs:
         run: dotnet build src/HyperBoost/HyperBoost.csproj -c Release --no-restore
       - name: Publish portable EXE
         run: dotnet publish src/HyperBoost/HyperBoost.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:DebugType=None -p:DebugSymbols=false --no-restore -o publish
+      - name: Fetch pinned PresentMon 2.5.1
+        shell: pwsh
+        run: |
+          $url = 'https://github.com/GameTechDev/PresentMon/releases/download/v2.5.1/PresentMon-2.5.1-x64.exe'
+          $expected = '9bec3083069f58f911e6a512f4806db51a27bd096103087bc1d05ef54c80a191'
+          $target = 'publish\PresentMon-2.5.1-x64.exe'
+          Invoke-WebRequest -Uri $url -OutFile $target
+          $actual = (Get-FileHash $target -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($actual -ne $expected) {
+            throw "PresentMon SHA-256 mismatch. Expected $expected, got $actual"
+          }
+          Copy-Item 'third_party\PresentMon-LICENSE.txt' 'publish\PRESENTMON-LICENSE.txt' -Force
+          Write-Host "PresentMon verified: $actual"
+      - name: Benchmark parser self-test
+        shell: pwsh
+        run: |
+          $ok = Join-Path $env:TEMP 'HyperBoost-benchmark-selftest.ok'
+          $fail = Join-Path $env:TEMP 'HyperBoost-benchmark-selftest.fail'
+          Remove-Item $ok,$fail -Force -ErrorAction SilentlyContinue
+          $exe = (Resolve-Path 'publish\HyperBoost.exe').Path
+          $p = Start-Process -FilePath $exe -ArgumentList '--benchmark-self-test' -Wait -PassThru
+          if ($p.ExitCode -ne 0) {
+            if (Test-Path $fail) { Get-Content $fail }
+            throw "Benchmark self-test exited with code $($p.ExitCode)."
+          }
+          if (-not (Test-Path $ok)) {
+            throw 'Benchmark self-test did not create its success marker.'
+          }
+          Get-Content $ok
       - name: Runtime smoke launch
         shell: pwsh
         run: |
@@ -49,11 +78,15 @@ jobs:
       - name: Package and checksum
         shell: pwsh
         run: |
-          $hash = (Get-FileHash publish/HyperBoost.exe -Algorithm SHA256).Hash.ToLowerInvariant()
-          "$hash  HyperBoost.exe" | Set-Content -Encoding ascii publish/SHA256SUMS.txt
-          Compress-Archive -Path publish/HyperBoost.exe,publish/SHA256SUMS.txt -DestinationPath HyperBoost-Beta-0.4-win-x64.zip -Force
+          $hyper = (Get-FileHash publish/HyperBoost.exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          $present = (Get-FileHash publish/PresentMon-2.5.1-x64.exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          @(
+            "$hyper  HyperBoost.exe"
+            "$present  PresentMon-2.5.1-x64.exe"
+          ) | Set-Content -Encoding ascii publish/SHA256SUMS.txt
+          Compress-Archive -Path publish/HyperBoost.exe,publish/PresentMon-2.5.1-x64.exe,publish/PRESENTMON-LICENSE.txt,publish/SHA256SUMS.txt -DestinationPath HyperBoost-Beta-0.5-win-x64.zip -Force
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: HyperBoost-Beta-0.4-win-x64
-          path: HyperBoost-Beta-0.4-win-x64.zip
+          name: HyperBoost-Beta-0.5-win-x64
+          path: HyperBoost-Beta-0.5-win-x64.zip
           if-no-files-found: error
