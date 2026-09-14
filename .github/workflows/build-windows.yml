@@ -1,0 +1,29 @@
+name: Build Windows beta
+on:
+  push:
+    branches: [ main, codex/beta-0.1 ]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - name: Restore
+        run: dotnet restore src/HyperBoost/HyperBoost.csproj
+      - name: Build and test
+        run: dotnet build src/HyperBoost/HyperBoost.csproj -c Release --no-restore
+      - name: Publish portable EXE
+        run: dotnet publish src/HyperBoost/HyperBoost.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:DebugType=None -p:DebugSymbols=false -o publish
+      - name: Package
+        shell: pwsh
+        run: Compress-Archive -Path publish/HyperBoost.exe -DestinationPath HyperBoost-Beta-0.1-win-x64.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: HyperBoost-Beta-0.1-win-x64
+          path: HyperBoost-Beta-0.1-win-x64.zip
+          if-no-files-found: error

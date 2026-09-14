@@ -1,0 +1,29 @@
+<Window x:Class="HyperBoost.MainWindow"
+ xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+ xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+ Title="HyperBoost Beta" Width="1060" Height="720" MinWidth="860" MinHeight="600"
+ Background="{StaticResource Bg}" WindowStartupLocation="CenterScreen">
+ <Grid Margin="22">
+  <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+  <DockPanel>
+   <StackPanel><TextBlock Text="HYPERBOOST" FontSize="30" FontWeight="Bold" Foreground="{StaticResource Accent}"/><TextBlock Text="Beta 0.1 · Más fluidez sin tocar la GPU" Foreground="#94A3B8"/></StackPanel>
+   <Border DockPanel.Dock="Right" Background="#15352F" CornerRadius="16" Padding="12,6" VerticalAlignment="Center"><TextBlock Text="GPU: SOLO LECTURA" Foreground="#72F2CA" FontWeight="Bold"/></Border>
+  </DockPanel>
+  <Border Grid.Row="1" Margin="0,18,0,14" Background="{StaticResource Panel}" CornerRadius="10" Padding="14">
+   <StackPanel>
+    <TextBlock x:Name="StatusText" Text="Pulsa Analizar PC para comenzar." FontSize="16"/>
+    <ProgressBar x:Name="Busy" Height="4" Margin="0,10,0,0" IsIndeterminate="True" Visibility="Collapsed" Foreground="{StaticResource Accent}"/>
+   </StackPanel>
+  </Border>
+  <TabControl Grid.Row="2" Background="{StaticResource Panel}" BorderThickness="0">
+   <TabItem Header="Equipo"><ScrollViewer><TextBox x:Name="HardwareText" IsReadOnly="True" TextWrapping="Wrap" FontFamily="Consolas" FontSize="14" Padding="18" Background="#101620" Foreground="#DCE7F5" BorderThickness="0"/></ScrollViewer></TabItem>
+   <TabItem Header="Diagnóstico"><ListBox x:Name="Findings" Background="#101620" BorderThickness="0"><ListBox.ItemTemplate><DataTemplate><Border Margin="7" Padding="12" Background="#192231" CornerRadius="8"><StackPanel><TextBlock Text="{Binding Severity}" Foreground="{StaticResource Accent}" FontWeight="Bold"/><TextBlock Text="{Binding Title}" FontSize="16" FontWeight="SemiBold" Margin="0,3"/><TextBlock Text="{Binding Detail}" TextWrapping="Wrap" Foreground="#B8C4D6"/></StackPanel></Border></DataTemplate></ListBox.ItemTemplate></ListBox></TabItem>
+   <TabItem Header="Qué modifica"><ScrollViewer><TextBlock Padding="20" TextWrapping="Wrap" FontSize="15" Text="Esta beta puede activar Game Mode, desactivar la captura de juegos en segundo plano y seleccionar el plan Alto rendimiento. Guarda una copia antes de actuar y permite restaurarla.&#10;&#10;Nunca modifica GPU, controlador, gráficos, resolución, perfiles NVIDIA/AMD, clocks, voltaje, potencia, ventiladores, DLSS, FSR, XeSS, Frame Generation, V-Sync, G-Sync, Reflex ni límites de FPS. Tampoco aplica cambios de BIOS, EXPO/XMP o Curve Optimizer: solo muestra recomendaciones."/></ScrollViewer></TabItem>
+  </TabControl>
+  <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,14,0,0">
+   <Button x:Name="ScanButton" Content="Analizar PC" Click="Scan_Click"/>
+   <Button x:Name="ApplyButton" Content="Aplicar perfil seguro" Click="Apply_Click" IsEnabled="False"/>
+   <Button x:Name="RestoreButton" Content="Restaurar cambios" Click="Restore_Click" Background="#334155" Foreground="White"/>
+  </StackPanel>
+ </Grid>
+</Window>
