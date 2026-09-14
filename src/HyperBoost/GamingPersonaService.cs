@@ -58,6 +58,7 @@ public sealed class GamingPersonaService : IDisposable
     bool includeOptionalBackground;
     DateTime lastReconcileUtc = DateTime.MinValue;
     string status = "Gaming Persona detenida.";
+    string? gameBoostWarning;
 
     public bool IsEnabled => enabled;
     public bool IsEngaged => engaged;
@@ -87,6 +88,7 @@ public sealed class GamingPersonaService : IDisposable
         useEcoQos = ecoQos;
         useMemoryPriority = memoryPriority;
         includeOptionalBackground = includeOptional;
+        gameBoostWarning = null;
         enabled = true;
         engaged = false;
         status = $"Gaming Persona armada para {game.Name} · PID {game.Id}. Se activará solo cuando el juego esté en primer plano.";
@@ -104,6 +106,7 @@ public sealed class GamingPersonaService : IDisposable
         enabled = false;
         gamePid = 0;
         gameCreationTime = 0;
+        gameBoostWarning = null;
         status = restore.Errors == 0
             ? "Gaming Persona detenida. Todos los ajustes de sesión que seguían disponibles fueron restaurados."
             : $"Gaming Persona detenida. Hubo {restore.Errors} restauraciones que Windows no permitió; los ajustes por proceso desaparecen al cerrar esos procesos.";
@@ -133,7 +136,7 @@ public sealed class GamingPersonaService : IDisposable
                 return;
             }
 
-            if (DateTime.UtcNow - lastReconcileUtc >= TimeSpan.FromSeconds(3))
+            if (DateTime.UtcNow - lastReconcileUtc >= TimeSpan.FromSeconds(5))
             {
                 ReconcileBackground();
                 UpdateActiveStatus();
@@ -150,15 +153,14 @@ public sealed class GamingPersonaService : IDisposable
 
     void Engage()
     {
-        var notes = new List<string>();
-
+        gameBoostWarning = null;
         try
         {
-            notes.Add(gameBoost.Start(gamePid, useAboveNormal, honorTimerRequests));
+            gameBoost.Start(gamePid, useAboveNormal, honorTimerRequests);
         }
         catch (Exception ex)
         {
-            notes.Add("Windows/anti-cheat no permitió ajustar el proceso del juego: " + ex.Message);
+            gameBoostWarning = "QoS del juego no aplicado: " + ex.Message;
         }
 
         engaged = true;
@@ -206,12 +208,21 @@ public sealed class GamingPersonaService : IDisposable
                     if (!ShouldConsiderForBackgroundQoS(name)) continue;
                     seen.Add(process.Id);
 
+                    adjustedBackground.TryGetValue(process.Id, out var snapshot);
+                    if (snapshot is not null && !IsSameProcess(snapshot.Pid, snapshot.CreationTime))
+                    {
+                        // El PID fue reutilizado. La foto anterior nunca se aplica al proceso nuevo.
+                        adjustedBackground.Remove(process.Id);
+                        cpuObservations.Remove(process.Id);
+                        snapshot = null;
+                    }
+
                     // Un proceso completamente inactivo no necesita ser modificado. Dos observaciones consecutivas
                     // permiten detectar actividad sin bloquear el hilo de interfaz.
                     var activeEnough = IsProcessActive(process);
-                    if (!activeEnough && !adjustedBackground.ContainsKey(process.Id)) continue;
+                    if (!activeEnough && snapshot is null) continue;
 
-                    if (!adjustedBackground.TryGetValue(process.Id, out var snapshot))
+                    if (snapshot is null)
                     {
                         snapshot = TryApplyBackgroundPolicy(process.Id, name, memoryPressure);
                         if (snapshot is not null) adjustedBackground[process.Id] = snapshot;
@@ -378,7 +389,9 @@ public sealed class GamingPersonaService : IDisposable
     void UpdateActiveStatus()
     {
         var pressure = ReadMemoryPressure();
-        status = $"Gaming Persona ACTIVA · background EcoQoS: {AdjustedBackgroundCount} · memoria 5→4: {MemoryAdjustedCount} · RAM usada: {pressure.MemoryLoad}% ({pressure.AvailableGb:0.0} GB libres).";
+        var gameState = gameBoost.IsActive ? "juego HighQoS" : "juego sin ajuste QoS";
+        status = $"Gaming Persona ACTIVA · {gameState} · background EcoQoS: {AdjustedBackgroundCount} · memoria 5→4: {MemoryAdjustedCount} · RAM usada: {pressure.MemoryLoad}% ({pressure.AvailableGb:0.0} GB libres).";
+        if (!string.IsNullOrWhiteSpace(gameBoostWarning)) status += " " + gameBoostWarning;
     }
 
     public async Task<IReadOnlyList<InterferenceSample>> ScanInterferenceAsync(int excludedGamePid)
@@ -461,12 +474,12 @@ public sealed class GamingPersonaService : IDisposable
 
     static MemoryPressure ReadMemoryPressure()
     {
-        var status = new MemoryStatusEx { Length = (uint)Marshal.SizeOf<MemoryStatusEx>() };
-        if (!GlobalMemoryStatusEx(ref status)) return new(0, 0, false);
-        var availableGb = status.AvailablePhysical / 1073741824d;
+        var memory = new MemoryStatusEx { Length = (uint)Marshal.SizeOf<MemoryStatusEx>() };
+        if (!GlobalMemoryStatusEx(ref memory)) return new(0, 0, false);
+        var availableGb = memory.AvailablePhysical / 1073741824d;
         // Umbral deliberadamente conservador: solo se toca Memory Priority cuando hay presión real.
-        var shouldLower = status.MemoryLoad >= 75 || availableGb < 6;
-        return new(status.MemoryLoad, availableGb, shouldLower);
+        var shouldLower = memory.MemoryLoad >= 75 || availableGb < 6;
+        return new(memory.MemoryLoad, availableGb, shouldLower);
     }
 
     static int GetForegroundProcessId()
