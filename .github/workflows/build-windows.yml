@@ -24,6 +24,28 @@ jobs:
         run: dotnet build src/HyperBoost/HyperBoost.csproj -c Release --no-restore
       - name: Publish portable EXE
         run: dotnet publish src/HyperBoost/HyperBoost.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:DebugType=None -p:DebugSymbols=false --no-restore -o publish
+      - name: Runtime smoke launch
+        shell: pwsh
+        run: |
+          $crash = Join-Path $env:LOCALAPPDATA 'HyperBoost\crash.log'
+          if (Test-Path $crash) { Remove-Item $crash -Force }
+          $exe = (Resolve-Path 'publish\HyperBoost.exe').Path
+          $p = Start-Process -FilePath $exe -PassThru
+          Start-Sleep -Seconds 5
+          $p.Refresh()
+          if ($p.HasExited) {
+            if (Test-Path $crash) { Get-Content $crash }
+            throw "HyperBoost exited during startup smoke test with code $($p.ExitCode)."
+          }
+          Stop-Process -Id $p.Id -Force
+          Start-Sleep -Milliseconds 500
+          if (Test-Path $crash) {
+            $text = Get-Content $crash -Raw
+            if (-not [string]::IsNullOrWhiteSpace($text)) {
+              Write-Host $text
+              throw 'HyperBoost produced crash.log during startup smoke test.'
+            }
+          }
       - name: Package and checksum
         shell: pwsh
         run: |
