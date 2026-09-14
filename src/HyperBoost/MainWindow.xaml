@@ -6,7 +6,7 @@
  <Grid Margin="22">
   <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
   <DockPanel>
-   <StackPanel><TextBlock Text="HYPERBOOST" FontSize="30" FontWeight="Bold" Foreground="{StaticResource Accent}"/><TextBlock Text="Beta 0.4 · Event-driven Bottleneck Gate" Foreground="#94A3B8"/></StackPanel>
+   <StackPanel><TextBlock Text="HYPERBOOST" FontSize="30" FontWeight="Bold" Foreground="{StaticResource Accent}"/><TextBlock Text="Beta 0.5 · A/B Benchmark + Event-driven Bottleneck Gate" Foreground="#94A3B8"/></StackPanel>
    <Border DockPanel.Dock="Right" Background="#15352F" CornerRadius="16" Padding="12,6" VerticalAlignment="Center"><TextBlock Text="GPU: SOLO LECTURA" Foreground="#72F2CA" FontWeight="Bold"/></Border>
   </DockPanel>
 
@@ -31,7 +31,7 @@
    <TabItem Header="Gaming Persona">
     <ScrollViewer Background="#101620">
      <StackPanel Margin="20">
-      <TextBlock Text="GAMING PERSONA · BETA 0.4" FontSize="18" FontWeight="Bold" Foreground="{StaticResource Accent}"/>
+      <TextBlock Text="GAMING PERSONA · BETA 0.5" FontSize="18" FontWeight="Bold" Foreground="{StaticResource Accent}"/>
       <TextBlock Margin="0,7,0,14" TextWrapping="Wrap" Foreground="#B8C4D6" Text="Selecciona el juego ya abierto. Armar la Persona no aplica tweaks: HyperBoost espera EVENT_SYSTEM_FOREGROUND de Windows. Cuando el juego recibe foco, HyperBoost se pone a sí mismo en background y ejecuta un Bottleneck Gate corto antes de decidir si EcoQoS tiene sentido."/>
 
       <Grid>
@@ -73,9 +73,69 @@
     </ScrollViewer>
    </TabItem>
 
+   <TabItem Header="Benchmark A/B">
+    <ScrollViewer Background="#101620">
+     <StackPanel Margin="20">
+      <TextBlock Text="RENDIMIENTO REAL · A/B BENCHMARK" FontSize="18" FontWeight="Bold" Foreground="{StaticResource Accent}"/>
+      <TextBlock Margin="0,7,0,12" TextWrapping="Wrap" Foreground="#B8C4D6" Text="Compara HyperBoost OFF vs ON sobre el mismo juego usando PresentMon 2.5.1 verificado. El plan alterna AB/BA entre pares para reducir sesgo por calentamiento, boost o deriva térmica. Usa el benchmark interno del juego o repite exactamente la misma ruta/escena en cada pasada."/>
+
+      <Border Background="#15352F" CornerRadius="8" Padding="12" Margin="0,0,0,14">
+       <TextBlock TextWrapping="Wrap" Foreground="#72F2CA" Text="CAPTURA: prepara una pasada, vuelve al juego y pulsa CTRL+SHIFT+F11 exactamente cuando quieras iniciar la muestra. PresentMon grabará solo el PID seleccionado durante el tiempo configurado. Si cambias de ventana durante la pasada, HyperBoost cancela y descarta esa medición."/>
+      </Border>
+
+      <Grid Margin="0,0,0,12">
+       <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+       <ComboBox x:Name="BenchmarkGameProcessCombo" MinHeight="36" Margin="0,0,8,0" DisplayMemberPath="Display" SelectionChanged="BenchmarkGameProcessCombo_SelectionChanged" Foreground="#111827"/>
+       <Button x:Name="BenchmarkRefreshButton" Grid.Column="1" Content="Actualizar procesos" Click="BenchmarkRefresh_Click"/>
+      </Grid>
+
+      <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+       <StackPanel Margin="0,0,22,0">
+        <TextBlock Text="Pares A/B" FontWeight="Bold" Margin="0,0,0,4"/>
+        <ComboBox x:Name="BenchmarkPairsCombo" Width="130" SelectedIndex="1" Foreground="#111827">
+         <ComboBoxItem Content="2 pares" Tag="2"/>
+         <ComboBoxItem Content="3 pares (recomendado)" Tag="3"/>
+         <ComboBoxItem Content="5 pares" Tag="5"/>
+        </ComboBox>
+       </StackPanel>
+       <StackPanel>
+        <TextBlock Text="Duración por pasada" FontWeight="Bold" Margin="0,0,0,4"/>
+        <ComboBox x:Name="BenchmarkDurationCombo" Width="150" SelectedIndex="1" Foreground="#111827">
+         <ComboBoxItem Content="15 segundos" Tag="15"/>
+         <ComboBoxItem Content="30 segundos" Tag="30"/>
+         <ComboBoxItem Content="60 segundos" Tag="60"/>
+        </ComboBox>
+       </StackPanel>
+      </StackPanel>
+
+      <TextBlock Margin="0,0,0,10" TextWrapping="Wrap" Foreground="#94A3B8" Text="ON usa las políticas marcadas en Gaming Persona (EcoQoS y/o Memory Priority). OFF mantiene HyperBoost abierto, pero sin Gaming Persona ni cambios sobre procesos. Mantén idénticos resolución, gráficos, DLSS/FSR/XeSS, Frame Generation, límite de FPS y escena en todas las pasadas."/>
+
+      <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+       <Button x:Name="BenchmarkCreateButton" Content="Crear sesión A/B" Click="BenchmarkCreate_Click"/>
+       <Button x:Name="BenchmarkNextButton" Content="Preparar siguiente pasada" Click="BenchmarkNext_Click"/>
+       <Button x:Name="BenchmarkCancelButton" Content="Cancelar sesión" Click="BenchmarkCancel_Click" Background="#334155" Foreground="White"/>
+      </StackPanel>
+
+      <Border Background="#192231" CornerRadius="8" Padding="12" Margin="0,0,0,12">
+       <TextBlock x:Name="BenchmarkStatusText" TextWrapping="Wrap" Text="No hay una sesión A/B activa."/>
+      </Border>
+
+      <TextBlock Text="PLAN / PROGRESO" FontSize="15" FontWeight="Bold" Foreground="{StaticResource Accent}"/>
+      <TextBox x:Name="BenchmarkPlanText" Margin="0,6,0,14" MinHeight="120" IsReadOnly="True" FontFamily="Consolas" FontSize="12" Padding="10" Background="#0B111A" Foreground="#DCE7F5" BorderThickness="0" VerticalScrollBarVisibility="Auto" Text="Crea una sesión para generar el plan contrabalanceado."/>
+
+      <TextBlock Text="RESULTADO" FontSize="15" FontWeight="Bold" Foreground="{StaticResource Accent}"/>
+      <TextBox x:Name="BenchmarkResultsText" Margin="0,6,0,4" MinHeight="260" IsReadOnly="True" TextWrapping="NoWrap" FontFamily="Consolas" FontSize="12" Padding="10" Background="#0B111A" Foreground="#DCE7F5" BorderThickness="0" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" Text="FPS promedio, 1% Low, 0.1% Low, p95/p99 y stutters aparecerán aquí. El veredicto compara la señal contra el ruido medido en las propias pasadas OFF."/>
+
+      <Border Background="#2A2115" CornerRadius="8" Padding="12" Margin="0,14,0,0">
+       <TextBlock TextWrapping="Wrap" Foreground="#F6D58B" Text="Metodología conservadora: 1% Low = 1000/p99 de frametime; 0.1% Low = 1000/p99.9. Se conservan los CSV crudos de PresentMon y un JSON/reporte en %LOCALAPPDATA%\HyperBoost\Benchmarks. Una diferencia pequeña o inconsistente se informa como ruido, no como ganancia."/>
+      </Border>
+     </StackPanel>
+    </ScrollViewer>
+   </TabItem>
+
    <TabItem Header="Qué modifica">
     <ScrollViewer Background="#101620">
-     <TextBlock Padding="20" TextWrapping="Wrap" FontSize="15" Text="WINDOWS/NVIDIA: NO LOS DUPLICA&#10;Game Mode, captura/Game DVR, optimizaciones para juegos en ventanas, HAGS, plan de energía y políticas del juego quedan en Windows. DLSS, Smooth Motion, Low Latency/Reflex, G-SYNC, límites de FPS, ShadowPlay, perfiles 3D y tuning quedan en NVIDIA App/driver.&#10;&#10;HYPERBOOST 0.4&#10;Usa EVENT_SYSTEM_FOREGROUND en vez de polling. Cuando el juego seleccionado obtiene foco, HyperBoost se pone a sí mismo en PROCESS_MODE_BACKGROUND y ejecuta un Bottleneck Gate de solo lectura. EcoQoS solo puede aplicarse si el Gate encuentra competencia medible en la allowlist segura. Memory Priority 5→4 sigue siendo temporal y solo bajo presión real.&#10;&#10;GPU&#10;Solo lectura mediante contadores WDDM. Se muestra el motor más ocupado por proceso para detectar competencia visible; HyperBoost no altera procesos gráficos ni opciones del driver.&#10;&#10;RESTAURACIÓN&#10;PID + tiempo de creación, ownership-aware restore y reintento de restauraciones temporales siguen vigentes.&#10;&#10;COMPATIBILIDAD&#10;El botón inferior de restauración solo se usa para backups de betas antiguas. Beta 0.4 no escribe Game Mode, Game DVR ni planes de energía."/>
+     <TextBlock Padding="20" TextWrapping="Wrap" FontSize="15" Text="WINDOWS/NVIDIA: NO LOS DUPLICA&#10;Game Mode, captura/Game DVR, optimizaciones para juegos en ventanas, HAGS, plan de energía y políticas del juego quedan en Windows. DLSS, Smooth Motion, Low Latency/Reflex, G-SYNC, límites de FPS, ShadowPlay, perfiles 3D y tuning quedan en NVIDIA App/driver.&#10;&#10;HYPERBOOST 0.5&#10;Mantiene el motor event-driven de 0.4 y añade benchmark A/B con PresentMon oficial. OFF no aplica Gaming Persona; ON usa el mismo Bottleneck Gate y políticas marcadas. El benchmark no cambia gráficos ni el driver y conserva CSV crudos para auditoría.&#10;&#10;GPU&#10;Solo lectura mediante contadores WDDM. Se muestra el motor más ocupado por proceso para detectar competencia visible; HyperBoost no altera procesos gráficos ni opciones del driver.&#10;&#10;RESTAURACIÓN&#10;PID + tiempo de creación, ownership-aware restore y reintento de restauraciones temporales siguen vigentes.&#10;&#10;COMPATIBILIDAD&#10;El botón inferior de restauración solo se usa para backups de betas antiguas. Beta 0.5 no escribe Game Mode, Game DVR ni planes de energía."/>
     </ScrollViewer>
    </TabItem>
   </TabControl>
