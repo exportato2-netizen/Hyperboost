@@ -133,7 +133,13 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
+            CancelTransientWork();
+            selfBackground.SetActive(false);
             systemEvents.StopWatchingProcess();
+            if (persona.IsEnabled || persona.HasPendingRestores)
+            {
+                try { persona.Stop(); } catch { }
+            }
             MessageBox.Show(ex.Message, "No se pudo armar Gaming Persona", MessageBoxButton.OK, MessageBoxImage.Warning);
             PersonaStatus.Text = "Gaming Persona no realizó cambios.";
         }
@@ -253,7 +259,7 @@ public partial class MainWindow : Window
             var result = await gate.EvaluateAsync(targetPid, persona, token);
             GateText.Text = result.ToDisplayText();
             if (!token.IsCancellationRequested && persona.IsEnabled && persona.TargetGamePid == targetPid && SystemEventCoordinator.GetForegroundProcessId() == targetPid)
-                PersonaStatus.Text = persona.EngageFromGate(result.AllowEcoQos);
+                PersonaStatus.Text = persona.EngageFromGate(result.EcoQosPids);
         }
         catch (OperationCanceledException)
         {
@@ -278,7 +284,6 @@ public partial class MainWindow : Window
         focusLossCts = new CancellationTokenSource();
         var token = focusLossCts.Token;
         PersonaStatus.Text = "Pérdida de foco detectada; se esperan 2 s antes de restaurar para ignorar overlays/Alt+Tab breve.";
-
         _ = RestoreAfterGraceAsync(token);
     }
 
