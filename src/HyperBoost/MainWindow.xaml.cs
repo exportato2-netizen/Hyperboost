@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Text;
 using System.Windows;
 using System.Windows.Controls;
@@ -18,7 +17,8 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
-        personaTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(900) };
+        // Seguimiento ligero del foco. El barrido de procesos secundarios se hace internamente cada 5 s.
+        personaTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(1200) };
         personaTimer.Tick += PersonaTimer_Tick;
         personaTimer.Start();
         RefreshProcesses();
@@ -210,18 +210,6 @@ public partial class MainWindow : Window
             UpdateControls();
     }
 
-    void OpenGraphics_Click(object sender, RoutedEventArgs e)
-    {
-        try
-        {
-            Process.Start(new ProcessStartInfo("ms-settings:display-advancedgraphics") { UseShellExecute = true });
-        }
-        catch
-        {
-            Process.Start(new ProcessStartInfo("ms-settings:display") { UseShellExecute = true });
-        }
-    }
-
     void SetBusy(bool value, string? text = null)
     {
         busy = value;
@@ -232,11 +220,14 @@ public partial class MainWindow : Window
 
     void UpdateControls()
     {
-        ScanButton.IsEnabled = !busy;
-        ApplyButton.IsEnabled = !busy && scanCompleted;
-        RestoreButton.IsEnabled = !busy && optimizer.HasBackup;
-
         var personaLocked = persona.IsEnabled;
+
+        // Los barridos WMI y las escrituras persistentes se bloquean mientras la Persona está armada
+        // para que HyperBoost no genere trabajo innecesario durante el juego.
+        ScanButton.IsEnabled = !busy && !personaLocked;
+        ApplyButton.IsEnabled = !busy && scanCompleted && !personaLocked;
+        RestoreButton.IsEnabled = !busy && optimizer.HasBackup && !personaLocked;
+
         RefreshProcessesButton.IsEnabled = !busy && !personaLocked;
         GameProcessCombo.IsEnabled = !busy && !personaLocked;
         PersonaEcoQosCheck.IsEnabled = !busy && !personaLocked;
@@ -246,6 +237,8 @@ public partial class MainWindow : Window
         HonorTimersCheck.IsEnabled = !busy && !personaLocked;
         StartPersonaButton.IsEnabled = !busy && !personaLocked && GameProcessCombo.SelectedItem is GameProcessCandidate;
         StopPersonaButton.IsEnabled = !busy && personaLocked;
+
+        // Medición explícita: se permite con la Persona activa para observar competencia real.
         ScanInterferenceButton.IsEnabled = !busy;
     }
 
