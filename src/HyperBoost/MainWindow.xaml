@@ -6,7 +6,7 @@
  <Grid Margin="22">
   <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
   <DockPanel>
-   <StackPanel><TextBlock Text="HYPERBOOST" FontSize="30" FontWeight="Bold" Foreground="{StaticResource Accent}"/><TextBlock Text="Beta 0.3 · Gaming Persona adaptativa para Windows 11" Foreground="#94A3B8"/></StackPanel>
+   <StackPanel><TextBlock Text="HYPERBOOST" FontSize="30" FontWeight="Bold" Foreground="{StaticResource Accent}"/><TextBlock Text="Beta 0.3.1 · Gaming Persona complementaria a Windows 11 y NVIDIA" Foreground="#94A3B8"/></StackPanel>
    <Border DockPanel.Dock="Right" Background="#15352F" CornerRadius="16" Padding="12,6" VerticalAlignment="Center"><TextBlock Text="GPU: SOLO LECTURA" Foreground="#72F2CA" FontWeight="Bold"/></Border>
   </DockPanel>
 
@@ -31,8 +31,8 @@
    <TabItem Header="Gaming Persona">
     <ScrollViewer Background="#101620">
      <StackPanel Margin="20">
-      <TextBlock Text="GAMING PERSONA · BETA 0.3" FontSize="18" FontWeight="Bold" Foreground="{StaticResource Accent}"/>
-      <TextBlock Margin="0,7,0,14" TextWrapping="Wrap" Foreground="#B8C4D6" Text="Selecciona el juego ya abierto. La Persona se activa únicamente cuando ese PID está en primer plano; al hacer Alt+Tab restaura los cambios temporales y queda en espera. No desinstala, suspende ni mata procesos."/>
+      <TextBlock Text="GAMING PERSONA · BETA 0.3.1" FontSize="18" FontWeight="Bold" Foreground="{StaticResource Accent}"/>
+      <TextBlock Margin="0,7,0,14" TextWrapping="Wrap" Foreground="#B8C4D6" Text="Selecciona el juego ya abierto. HyperBoost no cambia prioridad, timers, gráficos ni QoS del juego: Windows 11, Game Mode, el driver y NVIDIA App mantienen autoridad. La Persona solo reduce competencia segura alrededor del juego mientras ese PID tenga foco."/>
 
       <Grid>
        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
@@ -40,19 +40,12 @@
        <Button x:Name="RefreshProcessesButton" Grid.Column="1" Content="Actualizar procesos" Click="RefreshProcesses_Click"/>
       </Grid>
 
-      <TextBlock Margin="0,18,0,7" Text="CAPA ADAPTATIVA" FontWeight="Bold"/>
-      <CheckBox x:Name="PersonaEcoQosCheck" IsChecked="True" Margin="2,4" Content="EcoQoS solo para procesos secundarios de la lista segura"/>
-      <TextBlock Margin="24,0,0,7" TextWrapping="Wrap" Foreground="#94A3B8" Text="Por defecto se limita a sincronizadores y procesos de escritorio no críticos conocidos. Audio, Discord, OBS, overlays, anti-cheat y utilidades de periféricos quedan excluidos explícitamente."/>
+      <TextBlock Margin="0,18,0,7" Text="CAPA ADAPTATIVA PROPIA DE HYPERBOOST" FontWeight="Bold"/>
+      <CheckBox x:Name="PersonaEcoQosCheck" IsChecked="True" Margin="2,4" Content="EcoQoS solo para sincronizadores/procesos de escritorio de la lista segura"/>
+      <TextBlock Margin="24,0,0,7" TextWrapping="Wrap" Foreground="#94A3B8" Text="No se aplica a navegadores, Steam/Epic, Discord, audio, OBS, overlays, NVIDIA, anti-cheat ni periféricos. Si una app ya administra explícitamente su QoS, HyperBoost la respeta."/>
 
       <CheckBox x:Name="PersonaMemoryCheck" IsChecked="True" Margin="2,6,0,4" Content="Memory Priority adaptativa (5 → 4 únicamente bajo presión real de RAM)"/>
-      <TextBlock Margin="24,0,0,7" TextWrapping="Wrap" Foreground="#94A3B8" Text="Solo se activa si Windows reporta ≥75% de memoria física usada o menos de 6 GB disponibles. Se restaura a su valor exacto cuando desaparece la presión."/>
-
-      <CheckBox x:Name="IncludeOptionalBackgroundCheck" IsChecked="False" Margin="2,6,0,4" Content="Extender EcoQoS a navegadores y helpers de launchers (opcional)"/>
-      <TextBlock Margin="24,0,0,12" TextWrapping="Wrap" Foreground="#94A3B8" Text="Desactivado por defecto para evitar afectar reproducción multimedia o interfaces de launchers. Nunca incluye Discord, captura, audio ni anti-cheat."/>
-
-      <TextBlock Margin="0,8,0,7" Text="PROCESO DEL JUEGO" FontWeight="Bold"/>
-      <CheckBox x:Name="BoostPriorityCheck" Margin="2,4" Content="Prioridad Above Normal (opcional; solo si parte en Normal)"/>
-      <CheckBox x:Name="HonorTimersCheck" Margin="2,6,0,12" Content="Respetar solicitudes de resolución de temporizador mientras el juego tenga foco (opcional)"/>
+      <TextBlock Margin="24,0,0,12" TextWrapping="Wrap" Foreground="#94A3B8" Text="Solo para la misma lista segura y únicamente con ≥75% de RAM usada o menos de 6 GB disponibles. Si la app ya tiene una prioridad distinta de 5, no se modifica."/>
 
       <StackPanel Orientation="Horizontal" Margin="0,4,0,12">
        <Button x:Name="StartPersonaButton" Content="Armar Gaming Persona" Click="StartPersona_Click"/>
@@ -65,12 +58,12 @@
 
       <Separator Margin="0,2,0,16"/>
       <TextBlock Text="ESCÁNER DE INTERFERENCIAS · SOLO LECTURA" FontSize="16" FontWeight="Bold" Foreground="{StaticResource Accent}"/>
-      <TextBlock Margin="0,6,0,10" TextWrapping="Wrap" Foreground="#B8C4D6" Text="Toma dos muestras y ordena procesos por CPU, I/O y memoria. Sirve para encontrar competencia real antes de agregar nuevos procesos a la política; el escaneo no modifica nada."/>
+      <TextBlock Margin="0,6,0,10" TextWrapping="Wrap" Foreground="#B8C4D6" Text="Mide CPU, I/O y memoria por proceso. No duplica el overlay de NVIDIA: su objetivo es descubrir qué proceso de Windows está compitiendo con el juego, no mostrar FPS ni telemetría de GPU."/>
       <Button x:Name="ScanInterferenceButton" Content="Medir interferencias ahora" HorizontalAlignment="Left" Click="ScanInterference_Click"/>
       <TextBox x:Name="InterferenceText" Margin="0,10,0,4" MinHeight="180" IsReadOnly="True" TextWrapping="NoWrap" FontFamily="Consolas" FontSize="12" Padding="10" Background="#0B111A" Foreground="#DCE7F5" BorderThickness="0" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" Text="Aún no se ha realizado una medición."/>
 
       <Border Background="#2A2115" CornerRadius="8" Padding="12" Margin="0,14,0,0">
-       <TextBlock TextWrapping="Wrap" Foreground="#F6D58B" Text="Seguridad: la Persona solo usa APIs públicas por proceso. No toca Defender, VBS/Integridad de memoria, Secure Boot, firewall, servicios críticos, BCD/HPET, core parking, afinidad, GPU, drivers ni archivos del juego. Si un proceso niega acceso, se omite."/>
+       <TextBlock TextWrapping="Wrap" Foreground="#F6D58B" Text="Sin solapamiento: HyperBoost no modifica Game Mode/Game DVR, HAGS, optimizaciones para juegos en ventanas, gráficos, DLSS, Smooth Motion, Low Latency/Reflex, G-SYNC, límites de FPS, ShadowPlay, perfiles 3D, auto-tuning de GPU ni planes de energía."/>
       </Border>
      </StackPanel>
     </ScrollViewer>
@@ -78,15 +71,14 @@
 
    <TabItem Header="Qué modifica">
     <ScrollViewer Background="#101620">
-     <TextBlock Padding="20" TextWrapping="Wrap" FontSize="15" Text="PERFIL SEGURO PERSISTENTE&#10;Activa Game Mode y desactiva la captura de juegos en segundo plano. Guarda copia local, verifica escrituras y revierte automáticamente si algo falla. No fuerza planes de energía.&#10;&#10;GAMING PERSONA TEMPORAL&#10;Cuando el juego seleccionado está en primer plano, solicita HighQoS para ese proceso. En una lista conservadora de procesos secundarios puede solicitar EcoQoS. Bajo presión real de RAM puede bajar su Memory Priority de Normal (5) a Below Normal (4). Cada PID se identifica también por su tiempo de creación para no tocar un PID reutilizado. Alt+Tab o detener la Persona restaura el estado anterior.&#10;&#10;ESCÁNER DE INTERFERENCIAS&#10;Mide CPU, working set e I/O de procesos de la sesión actual y no modifica nada. Su objetivo es evitar agregar tweaks por intuición.&#10;&#10;NUNCA MODIFICA&#10;GPU, controlador, gráficos, resolución, perfiles NVIDIA/AMD, clocks, voltaje, potencia, ventiladores, DLSS, FSR, XeSS, Frame Generation, V-Sync, G-Sync, Reflex ni límites de FPS. Tampoco aplica BIOS, EXPO/XMP, Curve Optimizer, HPET/BCD, core parking, afinidad manual, Defender, VBS, Integridad de memoria, Secure Boot o firewall."/>
+     <TextBlock Padding="20" TextWrapping="Wrap" FontSize="15" Text="WINDOWS/NVIDIA: NO LOS DUPLICA&#10;Game Mode, captura/Game DVR, optimizaciones para juegos en ventanas, HAGS, plan de energía y políticas del juego quedan en Windows. DLSS, Smooth Motion, Low Latency/Reflex, G-SYNC, límites de FPS, ShadowPlay, perfiles 3D y tuning quedan en NVIDIA App/driver.&#10;&#10;GAMING PERSONA TEMPORAL&#10;Solo mientras el juego seleccionado está en primer plano, una allowlist pequeña de procesos secundarios no críticos puede pasar a EcoQoS. Si una app ya controla explícitamente su QoS, HyperBoost no la pisa. Bajo presión real de RAM, esos mismos procesos pueden bajar Memory Priority de 5 a 4. Alt+Tab restaura el estado anterior.&#10;&#10;ESCÁNER DE INTERFERENCIAS&#10;Mide CPU, working set e I/O por proceso. No muestra FPS ni telemetría GPU, por lo que no reemplaza ni duplica el overlay de NVIDIA.&#10;&#10;COMPATIBILIDAD&#10;El botón inferior de restauración solo aparece útil si existe un backup creado por una beta anterior. Beta 0.3.1 ya no escribe Game Mode, Game DVR ni planes de energía."/>
     </ScrollViewer>
    </TabItem>
   </TabControl>
 
   <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,14,0,0">
    <Button x:Name="ScanButton" Content="Analizar PC" Click="Scan_Click"/>
-   <Button x:Name="ApplyButton" Content="Aplicar perfil seguro" Click="Apply_Click" IsEnabled="False"/>
-   <Button x:Name="RestoreButton" Content="Restaurar cambios" Click="Restore_Click" Background="#334155" Foreground="White"/>
+   <Button x:Name="RestoreButton" Content="Restaurar cambios de beta anterior" Click="Restore_Click" Background="#334155" Foreground="White"/>
   </StackPanel>
  </Grid>
 </Window>
