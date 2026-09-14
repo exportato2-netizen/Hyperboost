@@ -2,7 +2,6 @@ using Microsoft.Win32;
 using System.Diagnostics;
 using System.IO;
 using System.Text.Json;
-using System.Text.RegularExpressions;
 
 namespace HyperBoost;
 
@@ -32,7 +31,7 @@ public sealed class OptimizationService
 
         var b = new BackupSnapshot
         {
-            ActivePowerScheme = await ActiveSchemeAsync(),
+            ActivePowerScheme = null,
             PowerSchemeChanged = false,
             ApplyCompleted = false
         };
@@ -165,13 +164,6 @@ public sealed class OptimizationService
             RegistryValueKind.String or RegistryValueKind.ExpandString => e.GetString() ?? "",
             _ => e.ToString()
         };
-    }
-
-    async Task<string?> ActiveSchemeAsync()
-    {
-        var s = await RunAsync("powercfg.exe", "/getactivescheme");
-        var match = Regex.Match(s, @"[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}");
-        return match.Success ? match.Value : null;
     }
 
     static async Task<string> RunAsync(string file, string args)
