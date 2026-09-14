@@ -39,7 +39,7 @@ public static class DiagnosticsEngine
         if (!r.Windows.Contains("Windows 11", StringComparison.OrdinalIgnoreCase))
             f.Add(new("Aviso","Sistema operativo","Esta beta se valida para Windows 11."));
         if (r.Memory.Count == 1) f.Add(new("Alta","RAM en un solo módulo","Dos módulos compatibles suelen mejorar el ancho de banda y los mínimos de FPS."));
-        var configured = r.Memory.Where(x=>x.ConfiguredMhz>0).Select(x=>x.ConfiguredMhz).DefaultIfEmpty(0).Min();
+        var configured = r.Memory.Where(x=>x.ConfiguredMhz>0).Select(x=>x.ConfiguredMhz).DefaultIfEmpty(0u).Min();
         if (configured > 0 && configured <= 4800)
             f.Add(new("Media","RAM a velocidad base",$"Detectada a {configured} MT/s. Revisa EXPO/XMP y estabilidad en BIOS; HyperBoost no cambiará la BIOS."));
         if (r.TotalRamGb < 16) f.Add(new("Alta","Memoria limitada",$"{r.TotalRamGb:0} GB detectados; juegos modernos pueden sufrir paginación."));
