@@ -6,7 +6,7 @@ namespace HyperBoost;
 public sealed record BottleneckGateResult(
     string Decision,
     string Summary,
-    bool AllowEcoQos,
+    IReadOnlyList<int> EcoQosPids,
     double GameGpuPercent,
     double HighestOtherGpuPercent,
     uint MemoryLoad,
@@ -14,6 +14,8 @@ public sealed record BottleneckGateResult(
     IReadOnlyList<InterferenceSample> Interference,
     GpuScanResult Gpu)
 {
+    public bool AllowEcoQos => EcoQosPids.Count > 0;
+
     public string ToDisplayText()
     {
         var sb = new StringBuilder();
@@ -22,7 +24,7 @@ public sealed record BottleneckGateResult(
           .AppendLine($"GPU JUEGO  {(Gpu.Available ? $"{GameGpuPercent:0.0}%" : "no disponible")}")
           .AppendLine($"GPU OTROS  {(Gpu.Available ? $"{HighestOtherGpuPercent:0.0}%" : "no disponible")}")
           .AppendLine($"RAM        {MemoryLoad}% usada · {AvailableMemoryGb:0.0} GB libres")
-          .AppendLine($"EcoQoS     {(AllowEcoQos ? "permitido por Gate" : "bloqueado por Gate")}");
+          .AppendLine($"EcoQoS     {(AllowEcoQos ? $"PID(s) aprobados: {string.Join(", ", EcoQosPids)}" : "ningún PID aprobado")}");
 
         if (Gpu.Processes.Count > 0)
         {
@@ -75,50 +77,47 @@ public sealed class BottleneckGateService
 
         var strongSafeBackground = interference
             .Where(x => x.EligibleForAutomaticQoS)
-            .Where(x => x.CpuPercent >= 0.25 || x.IoMbPerSec >= 0.50 || x.WorkingSetMb >= 300)
+            .Where(x => x.CpuPercent >= 0.25 || x.IoMbPerSec >= 0.50)
             .ToList();
 
+        var ecoPids = strongSafeBackground.Select(x => x.Pid).Distinct().ToList();
         var memoryPressure = memory.MemoryLoad >= 75 || memory.AvailableGb < 6;
         var gpuSaturated = gpu.Available && gameGpu >= 90;
         var gpuCompetition = gpu.Available && otherGpu >= 5;
-        var allowEco = strongSafeBackground.Count > 0;
 
         string decision;
         string summary;
 
         if (memoryPressure)
         {
-            decision = allowEco ? "Intervenir de forma selectiva" : "Solo memoria si corresponde";
-            summary = "Windows está bajo presión de RAM. La prioridad de memoria adaptativa puede actuar solo sobre la lista segura; EcoQoS requiere además competencia real de CPU/I-O.";
+            decision = ecoPids.Count > 0 ? "Intervenir de forma selectiva" : "Solo memoria si corresponde";
+            summary = "Windows está bajo presión de RAM. La prioridad de memoria adaptativa puede actuar solo sobre la lista segura; EcoQoS se limita a PID(s) que demostraron CPU/I-O durante esta muestra.";
         }
-        else if (gpuSaturated && strongSafeBackground.Count == 0)
+        else if (gpuSaturated && ecoPids.Count == 0)
         {
             decision = "No tocar CPU";
             summary = "El motor GPU del juego está cerca de saturación y no aparece competencia segura relevante. EcoQoS no tiene una vía clara para aumentar FPS en esta muestra.";
-            allowEco = false;
         }
-        else if (gpuCompetition && strongSafeBackground.Count == 0)
+        else if (gpuCompetition && ecoPids.Count == 0)
         {
             decision = "Observar competencia GPU";
             summary = "Otro proceso usa GPU de forma visible. HyperBoost lo reporta, pero no modifica procesos gráficos porque Windows/NVIDIA/las apps conservan autoridad.";
-            allowEco = false;
         }
-        else if (strongSafeBackground.Count > 0)
+        else if (ecoPids.Count > 0)
         {
             decision = "EcoQoS selectivo permitido";
-            summary = "Se detectó actividad medible en un proceso de la allowlist segura. HyperBoost puede reducir esa competencia mientras el juego mantenga foco.";
+            summary = "Se detectó actividad CPU/I-O medible en PID(s) de la allowlist segura. Solo esos PID concretos quedan autorizados mientras el juego mantenga foco.";
         }
         else
         {
             decision = "No hacer cambios";
             summary = "No aparece presión de RAM ni competencia relevante en la allowlist segura. HyperBoost evita aplicar un tweak sin evidencia.";
-            allowEco = false;
         }
 
         return new(
             decision,
             summary,
-            allowEco,
+            ecoPids,
             gameGpu,
             otherGpu,
             memory.MemoryLoad,
