@@ -2,18 +2,23 @@
 
 Beta abierta de un optimizador para Windows 11 enfocado en estabilidad, frame pacing y FPS sin reducir calidad gráfica ni debilitar la seguridad del equipo.
 
-## Beta 0.3.1 · Gaming Persona sin duplicar Windows/NVIDIA
+## Beta 0.3.2 · Gaming Persona reversible y conflict-aware
 
-HyperBoost ya no intenta controlar funciones que Windows 11 o NVIDIA App administran mejor. El juego seleccionado sirve únicamente como referencia de foco; HyperBoost no cambia su prioridad, QoS, timers, gráficos ni driver.
+HyperBoost no intenta controlar funciones que Windows 11 o NVIDIA App administran mejor. El juego seleccionado sirve únicamente como referencia de foco; HyperBoost no cambia su prioridad, QoS, timers, gráficos ni driver.
 
 ### HyperBoost sí hace
 
-- EcoQoS temporal únicamente para una allowlist pequeña de procesos secundarios no críticos conocidos (por ejemplo sincronizadores/servicios de escritorio de usuario).
+- EcoQoS temporal únicamente para una allowlist pequeña de procesos secundarios no críticos conocidos.
 - Si un proceso ya controla explícitamente su propio `PROCESS_POWER_THROTTLING_EXECUTION_SPEED`, HyperBoost no lo pisa.
+- Al restaurar EcoQoS, solo revierte el bit que todavía reconoce como propio; cambios posteriores de Windows u otra aplicación se conservan.
 - Memory Priority adaptativa: solo bajo presión real de RAM (>=75% usada o <6 GB disponibles), y únicamente de 5 a 4 para la misma lista segura.
-- Restauración automática al perder foco, detener la Persona o cerrar HyperBoost.
+- Memory Priority solo vuelve de 4 a 5 si el valor actual sigue siendo el aplicado por HyperBoost; si otra autoridad lo cambió, se respeta.
+- Tolerancia de 2 segundos ante pérdidas breves de foco para evitar ciclos de restauración/reaplicación por overlays o Alt+Tab corto.
+- Las restauraciones que fallen temporalmente no pierden su snapshot y pueden reintentarse.
 - Protección PID + tiempo de creación para evitar modificar procesos reutilizados.
-- Escáner de interferencias de solo lectura con CPU, working set e I/O por proceso.
+- Escáner de interferencias de solo lectura con CPU, working set e I/O por proceso usando tiempo monotónico real.
+- El escáner verifica también el tiempo de creación del proceso entre muestras.
+- El análisis de hardware tolera fallos WMI parciales: un sensor/clase inaccesible no invalida el resto del informe.
 
 ### HyperBoost deja a Windows 11
 
@@ -39,7 +44,11 @@ Navegadores, launchers, Discord, audio, OBS, overlays, anti-cheat, NVIDIA y util
 
 ## Compatibilidad con betas anteriores
 
-Beta 0.3.1 ya no escribe Game Mode, Game DVR ni planes de energía. Si existe un backup creado por Beta 0.1/0.2/0.3, la interfaz mantiene una opción de restauración para devolver esos valores al estado original.
+Beta 0.3.2 ya no escribe Game Mode, Game DVR ni planes de energía. Si existe un backup creado por Beta 0.1/0.2/0.3, la interfaz mantiene una opción de restauración. Antes de escribir, el backup se valida contra una allowlist de los cuatro valores de registro históricos y contra un GUID de energía válido. Un backup malformado se conserva intacto y no se aplica.
+
+## Verificación de ejecución
+
+El workflow oficial ahora hace Restore, Build, Publish y además un **runtime smoke launch**: inicia realmente `HyperBoost.exe` en Windows, comprueba que siga vivo y falla la build si aparece `crash.log`. Después genera checksum y ZIP.
 
 ## Seguridad y límites deliberados
 

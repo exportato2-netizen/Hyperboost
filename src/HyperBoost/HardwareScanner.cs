@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Management;
+using System.Runtime.InteropServices;
 
 namespace HyperBoost;
 
@@ -26,76 +27,94 @@ public sealed class HardwareScanner
     {
         var r = new HardwareReport();
 
-        using (var searcher = new ManagementObjectSearcher("SELECT Caption,Version,BuildNumber FROM Win32_OperatingSystem"))
-        foreach (ManagementObject o in searcher.Get())
+        SafeWmi(() =>
         {
-            using (o) r.Windows = $"{S(o, "Caption")} · {S(o, "Version")} (build {S(o, "BuildNumber")})";
-        }
+            using var searcher = new ManagementObjectSearcher("SELECT Caption,Version,BuildNumber FROM Win32_OperatingSystem");
+            foreach (ManagementObject o in searcher.Get())
+                using (o) r.Windows = $"{S(o, "Caption")} · {S(o, "Version")} (build {S(o, "BuildNumber")})";
+        });
 
-        using (var searcher = new ManagementObjectSearcher("SELECT Name,NumberOfCores,NumberOfLogicalProcessors FROM Win32_Processor"))
-        foreach (ManagementObject o in searcher.Get())
+        SafeWmi(() =>
         {
-            using (o)
+            using var searcher = new ManagementObjectSearcher("SELECT Name,NumberOfCores,NumberOfLogicalProcessors FROM Win32_Processor");
+            foreach (ManagementObject o in searcher.Get())
             {
-                r.Cpu = S(o, "Name");
-                r.PhysicalCores = (int)U(o, "NumberOfCores");
-                r.LogicalCores = (int)U(o, "NumberOfLogicalProcessors");
+                using (o)
+                {
+                    r.Cpu = S(o, "Name");
+                    r.PhysicalCores = (int)U(o, "NumberOfCores");
+                    r.LogicalCores = (int)U(o, "NumberOfLogicalProcessors");
+                }
             }
-        }
+        });
 
-        var gpus = new List<string>();
-        using (var searcher = new ManagementObjectSearcher("SELECT Name,DriverVersion FROM Win32_VideoController"))
-        foreach (ManagementObject o in searcher.Get())
+        SafeWmi(() =>
         {
-            using (o) gpus.Add($"{S(o, "Name")} (driver {S(o, "DriverVersion")})");
-        }
-        r.GpuReadOnly = string.Join(" · ", gpus);
+            var gpus = new List<string>();
+            using var searcher = new ManagementObjectSearcher("SELECT Name,DriverVersion FROM Win32_VideoController");
+            foreach (ManagementObject o in searcher.Get())
+                using (o) gpus.Add($"{S(o, "Name")} (driver {S(o, "DriverVersion")})");
+            if (gpus.Count > 0) r.GpuReadOnly = string.Join(" · ", gpus);
+        });
 
-        using (var searcher = new ManagementObjectSearcher("SELECT Manufacturer,Product FROM Win32_BaseBoard"))
-        foreach (ManagementObject o in searcher.Get())
+        SafeWmi(() =>
         {
-            using (o) r.Motherboard = $"{S(o, "Manufacturer")} {S(o, "Product")}".Trim();
-        }
+            using var searcher = new ManagementObjectSearcher("SELECT Manufacturer,Product FROM Win32_BaseBoard");
+            foreach (ManagementObject o in searcher.Get())
+                using (o) r.Motherboard = $"{S(o, "Manufacturer")} {S(o, "Product")}".Trim();
+        });
 
-        using (var searcher = new ManagementObjectSearcher("SELECT SMBIOSBIOSVersion,ReleaseDate FROM Win32_BIOS"))
-        foreach (ManagementObject o in searcher.Get())
+        SafeWmi(() =>
         {
-            using (o) r.Bios = $"{S(o, "SMBIOSBIOSVersion")} · {S(o, "ReleaseDate")}";
-        }
+            using var searcher = new ManagementObjectSearcher("SELECT SMBIOSBIOSVersion,ReleaseDate FROM Win32_BIOS");
+            foreach (ManagementObject o in searcher.Get())
+                using (o) r.Bios = $"{S(o, "SMBIOSBIOSVersion")} · {S(o, "ReleaseDate")}";
+        });
 
-        using (var searcher = new ManagementObjectSearcher("SELECT Manufacturer,PartNumber,Capacity,Speed,ConfiguredClockSpeed FROM Win32_PhysicalMemory"))
-        foreach (ManagementObject o in searcher.Get())
+        SafeWmi(() =>
         {
-            using (o)
+            using var searcher = new ManagementObjectSearcher("SELECT Manufacturer,PartNumber,Capacity,Speed,ConfiguredClockSpeed FROM Win32_PhysicalMemory");
+            foreach (ManagementObject o in searcher.Get())
             {
-                r.Memory.Add(new(
-                    $"{S(o, "Manufacturer")} {S(o, "PartNumber")}".Trim(),
-                    UL(o, "Capacity") / 1073741824d,
-                    U(o, "Speed"),
-                    U(o, "ConfiguredClockSpeed")));
+                using (o)
+                {
+                    r.Memory.Add(new(
+                        $"{S(o, "Manufacturer")} {S(o, "PartNumber")}".Trim(),
+                        UL(o, "Capacity") / 1073741824d,
+                        U(o, "Speed"),
+                        U(o, "ConfiguredClockSpeed")));
+                }
             }
-        }
+        });
 
-        using (var searcher = new ManagementObjectSearcher("SELECT Model,Size,Status FROM Win32_DiskDrive"))
-        foreach (ManagementObject o in searcher.Get())
+        SafeWmi(() =>
         {
-            using (o) r.Disks.Add(new(S(o, "Model"), UL(o, "Size") / 1_000_000_000d, S(o, "Status")));
-        }
+            using var searcher = new ManagementObjectSearcher("SELECT Model,Size,Status FROM Win32_DiskDrive");
+            foreach (ManagementObject o in searcher.Get())
+                using (o) r.Disks.Add(new(S(o, "Model"), UL(o, "Size") / 1_000_000_000d, S(o, "Status")));
+        });
 
-        try
+        SafeWmi(() =>
         {
             using var searcher = new ManagementObjectSearcher("SELECT BatteryStatus FROM Win32_Battery");
             foreach (ManagementObject o in searcher.Get())
             {
                 using (o) { r.HasBattery = true; break; }
             }
-        }
-        catch { /* Algunos desktops/firmwares no exponen Win32_Battery. */ }
+        });
 
         r.ActivePowerScheme = ReadActivePowerScheme();
         r.GamingBackgroundTools = DetectGamingTools();
         return r;
     });
+
+    static void SafeWmi(Action action)
+    {
+        try { action(); }
+        catch (ManagementException) { }
+        catch (COMException) { }
+        catch (UnauthorizedAccessException) { }
+    }
 
     static string ReadActivePowerScheme()
     {
@@ -112,8 +131,12 @@ public sealed class HardwareScanner
                 }
             };
             p.Start();
+            if (!p.WaitForExit(1500))
+            {
+                try { p.Kill(true); } catch { }
+                return "No detectado";
+            }
             var output = p.StandardOutput.ReadToEnd();
-            p.WaitForExit(1500);
             return p.ExitCode == 0 && !string.IsNullOrWhiteSpace(output) ? output.Trim() : "No detectado";
         }
         catch { return "No detectado"; }
@@ -122,7 +145,11 @@ public sealed class HardwareScanner
     static List<string> DetectGamingTools()
     {
         var found = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var p in Process.GetProcesses())
+        Process[] processes;
+        try { processes = Process.GetProcesses(); }
+        catch { return []; }
+
+        foreach (var p in processes)
         {
             using (p)
             {
@@ -146,7 +173,9 @@ public static class DiagnosticsEngine
         var f = new List<Finding>();
 
         if (!r.Windows.Contains("Windows 11", StringComparison.OrdinalIgnoreCase))
-            f.Add(new("Aviso", "Sistema operativo", "Esta beta se valida para Windows 11."));
+            f.Add(new("Aviso", "Sistema operativo", r.Windows == "No detectado"
+                ? "WMI no pudo identificar Windows. El resto del diagnóstico disponible sigue siendo válido."
+                : "Esta beta se valida para Windows 11."));
 
         if (r.Memory.Count == 1)
             f.Add(new("Media", "Un solo módulo de RAM detectado", "Según la plataforma puede reducir el ancho de banda de memoria. HyperBoost no cambia BIOS ni perfiles EXPO/XMP."));
@@ -154,7 +183,7 @@ public static class DiagnosticsEngine
         foreach (var m in r.Memory.Where(x => x.SpeedMhz > 0 && x.ConfiguredMhz > 0 && x.ConfiguredMhz + 200 < x.SpeedMhz))
             f.Add(new("Media", "RAM por debajo de la velocidad informada", $"{m.Name}: WMI informa {m.SpeedMhz} MT/s y configuración actual {m.ConfiguredMhz} MT/s. Verifica compatibilidad y estabilidad antes de cambiar BIOS."));
 
-        if (r.TotalRamGb < 16)
+        if (r.Memory.Count > 0 && r.TotalRamGb < 16)
             f.Add(new("Alta", "Memoria limitada", $"{r.TotalRamGb:0} GB detectados; juegos modernos pueden sufrir paginación."));
 
         foreach (var d in r.Disks.Where(x => !string.IsNullOrWhiteSpace(x.Status) && !x.Status.Equals("OK", StringComparison.OrdinalIgnoreCase)))
@@ -163,7 +192,7 @@ public static class DiagnosticsEngine
         if (r.ActivePowerScheme.Contains(HighPerformanceGuid, StringComparison.OrdinalIgnoreCase))
         {
             var extra = r.HasBattery ? " En un portátil también puede elevar consumo y temperatura." : "";
-            f.Add(new("Info", "Plan Alto rendimiento detectado", "HyperBoost 0.3 no lo fuerza: en CPUs modernas Windows ya adapta el perfil de procesador durante Game Mode y un plan global puede no mejorar FPS." + extra));
+            f.Add(new("Info", "Plan Alto rendimiento detectado", "HyperBoost no lo fuerza: en CPUs modernas Windows ya adapta el perfil de procesador durante Game Mode y un plan global puede no mejorar FPS." + extra));
         }
 
         if (r.GamingBackgroundTools.Count > 0)

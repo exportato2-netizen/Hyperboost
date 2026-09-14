@@ -192,15 +192,18 @@ public partial class MainWindow : Window
 
     void UpdateControls()
     {
-        var personaLocked = persona.IsEnabled;
-        ScanButton.IsEnabled = !busy && !personaLocked;
-        RestoreButton.IsEnabled = !busy && optimizer.HasBackup && !personaLocked;
+        var personaActive = persona.IsEnabled;
+        var pendingRestore = persona.HasPendingRestores;
+        var personaLocked = personaActive || pendingRestore;
+
+        ScanButton.IsEnabled = !busy && !personaActive;
+        RestoreButton.IsEnabled = !busy && optimizer.HasBackup && !personaActive;
         RefreshProcessesButton.IsEnabled = !busy && !personaLocked;
         GameProcessCombo.IsEnabled = !busy && !personaLocked;
         PersonaEcoQosCheck.IsEnabled = !busy && !personaLocked;
         PersonaMemoryCheck.IsEnabled = !busy && !personaLocked;
         StartPersonaButton.IsEnabled = !busy && !personaLocked && GameProcessCombo.SelectedItem is GameProcessCandidate;
-        StopPersonaButton.IsEnabled = !busy && personaLocked;
+        StopPersonaButton.IsEnabled = !busy && (personaActive || pendingRestore);
         ScanInterferenceButton.IsEnabled = !busy;
     }
 
