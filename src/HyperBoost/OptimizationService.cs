@@ -2,73 +2,201 @@ using Microsoft.Win32;
 using System.Diagnostics;
 using System.IO;
 using System.Text.Json;
-using System.Text.RegularExpressions;
 
 namespace HyperBoost;
 
 public sealed class OptimizationService
 {
-    readonly string root=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"HyperBoost");
-    public string LastBackupPath => Path.Combine(root,"last-backup.json");
+    readonly string root = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "HyperBoost");
+    public string LastBackupPath => Path.Combine(root, "last-backup.json");
+    public bool HasBackup => File.Exists(LastBackupPath);
 
     public async Task<string> ApplySafeAsync()
     {
         Directory.CreateDirectory(root);
-        var b=new BackupSnapshot { ActivePowerScheme=await ActiveSchemeAsync() };
-        Backup(b, Registry.CurrentUser, "Software\\Microsoft\\GameBar","AutoGameModeEnabled");
-        Backup(b, Registry.CurrentUser, "Software\\Microsoft\\GameBar","AllowAutoGameMode");
-        Backup(b, Registry.CurrentUser, "System\\GameConfigStore","GameDVR_Enabled");
-        Backup(b, Registry.CurrentUser, "Software\\Microsoft\\Windows\\CurrentVersion\\GameDVR","AppCaptureEnabled");
-        await File.WriteAllTextAsync(LastBackupPath,JsonSerializer.Serialize(b,new JsonSerializerOptions{WriteIndented=true}));
-        SetDword("Software\\Microsoft\\GameBar","AutoGameModeEnabled",1);
-        SetDword("Software\\Microsoft\\GameBar","AllowAutoGameMode",1);
-        SetDword("System\\GameConfigStore","GameDVR_Enabled",0);
-        SetDword("Software\\Microsoft\\Windows\\CurrentVersion\\GameDVR","AppCaptureEnabled",0);
-        var power=await RunAsync("powercfg.exe","/setactive SCHEME_MIN");
-        Log("Aplicado: Game Mode activo, captura en segundo plano desactivada, plan Alto rendimiento. "+power);
-        return "Perfil seguro aplicado. Reinicia el juego para que todos los cambios surtan efecto.";
+
+        if (File.Exists(LastBackupPath))
+        {
+            var stale = await LoadBackupAsync();
+            if (stale is null)
+                return $"Existe una copia de seguridad que no se puede leer en {LastBackupPath}. Por seguridad no se aplicaron nuevos cambios ni se sobrescribió el archivo.";
+
+            if (stale.ApplyCompleted)
+                return "Ya existe un perfil aplicado. Restaura los cambios antes de volver a aplicar para no perder el estado original.";
+
+            await RestoreSnapshotAsync(stale);
+            File.Delete(LastBackupPath);
+            Log("Se recuperó una copia incompleta antes de volver a aplicar.");
+        }
+
+        var b = new BackupSnapshot
+        {
+            SchemaVersion = 2,
+            ActivePowerScheme = null,
+            PowerSchemeChanged = false,
+            ApplyCompleted = false
+        };
+
+        Backup(b, Registry.CurrentUser, "Software\\Microsoft\\GameBar", "AutoGameModeEnabled");
+        Backup(b, Registry.CurrentUser, "Software\\Microsoft\\GameBar", "AllowAutoGameMode");
+        Backup(b, Registry.CurrentUser, "System\\GameConfigStore", "GameDVR_Enabled");
+        Backup(b, Registry.CurrentUser, "Software\\Microsoft\\Windows\\CurrentVersion\\GameDVR", "AppCaptureEnabled");
+        await SaveBackupAsync(b);
+
+        try
+        {
+            SetDwordVerified("Software\\Microsoft\\GameBar", "AutoGameModeEnabled", 1);
+            SetDwordVerified("Software\\Microsoft\\GameBar", "AllowAutoGameMode", 1);
+            SetDwordVerified("System\\GameConfigStore", "GameDVR_Enabled", 0);
+            SetDwordVerified("Software\\Microsoft\\Windows\\CurrentVersion\\GameDVR", "AppCaptureEnabled", 0);
+
+            b.ApplyCompleted = true;
+            await SaveBackupAsync(b);
+            Log("Aplicado: Game Mode activo y captura de juegos en segundo plano desactivada. No se modificó el plan de energía.");
+            return "Perfil seguro aplicado. No se cambió el plan de energía, la GPU ni funciones de seguridad. Reinicia el juego para asegurar que tome la configuración.";
+        }
+        catch
+        {
+            try
+            {
+                await RestoreSnapshotAsync(b);
+                if (File.Exists(LastBackupPath)) File.Delete(LastBackupPath);
+                Log("Aplicación fallida; se revirtió automáticamente el estado previo.");
+            }
+            catch (Exception rollbackEx)
+            {
+                Log("Falló la reversión automática: " + rollbackEx.Message);
+            }
+            throw;
+        }
     }
 
     public async Task<string> RestoreAsync()
     {
-        if(!File.Exists(LastBackupPath)) return "No existe una copia de seguridad previa.";
-        var b=JsonSerializer.Deserialize<BackupSnapshot>(await File.ReadAllTextAsync(LastBackupPath));
-        if(b is null) return "La copia no se pudo leer.";
-        foreach(var x in b.Registry) RestoreRegistry(x);
-        if(!string.IsNullOrWhiteSpace(b.ActivePowerScheme)) await RunAsync("powercfg.exe",$"/setactive {b.ActivePowerScheme}");
-        Log("Restaurado: "+b.CreatedUtc.ToString("O"));
-        return "Configuración anterior restaurada.";
+        if (!File.Exists(LastBackupPath)) return "No existe una copia de seguridad previa.";
+        var b = await LoadBackupAsync();
+        if (b is null) return $"La copia no se pudo leer y se dejó intacta en {LastBackupPath}.";
+
+        await RestoreSnapshotAsync(b);
+        File.Delete(LastBackupPath);
+        Log("Restaurado: " + b.CreatedUtc.ToString("O"));
+        return "Configuración anterior restaurada y copia activa cerrada.";
+    }
+
+    async Task RestoreSnapshotAsync(BackupSnapshot b)
+    {
+        foreach (var x in b.Registry.AsEnumerable().Reverse()) RestoreRegistry(x);
+
+        // Compatibilidad con copias de Beta 0.1, que sí forzaba Alto rendimiento.
+        if ((b.SchemaVersion == 0 || b.PowerSchemeChanged) && !string.IsNullOrWhiteSpace(b.ActivePowerScheme))
+            await RunAsync("powercfg.exe", $"/setactive {b.ActivePowerScheme}");
+    }
+
+    async Task<BackupSnapshot?> LoadBackupAsync()
+    {
+        try
+        {
+            return JsonSerializer.Deserialize<BackupSnapshot>(await File.ReadAllTextAsync(LastBackupPath));
+        }
+        catch (JsonException ex)
+        {
+            Log("Copia JSON inválida: " + ex.Message);
+            return null;
+        }
+        catch (IOException ex)
+        {
+            Log("No se pudo leer la copia: " + ex.Message);
+            return null;
+        }
+    }
+
+    async Task SaveBackupAsync(BackupSnapshot b)
+    {
+        Directory.CreateDirectory(root);
+        var temp = LastBackupPath + ".tmp";
+        var json = JsonSerializer.Serialize(b, new JsonSerializerOptions { WriteIndented = true });
+        await File.WriteAllTextAsync(temp, json);
+        File.Move(temp, LastBackupPath, true);
     }
 
     static void Backup(BackupSnapshot b, RegistryKey hive, string path, string name)
     {
-        using var k=hive.OpenSubKey(path);
-        var names=k?.GetValueNames()??[];
-        var existed=names.Contains(name,StringComparer.OrdinalIgnoreCase);
-        var value=existed?k!.GetValue(name,null,RegistryValueOptions.DoNotExpandEnvironmentNames):null;
-        var kind=existed?k!.GetValueKind(name).ToString():null;
-        b.Registry.Add(new("HKCU",path,name,existed,value,kind));
+        using var k = hive.OpenSubKey(path);
+        var names = k?.GetValueNames() ?? [];
+        var existed = names.Contains(name, StringComparer.OrdinalIgnoreCase);
+        var value = existed ? k!.GetValue(name, null, RegistryValueOptions.DoNotExpandEnvironmentNames) : null;
+        var kind = existed ? k!.GetValueKind(name).ToString() : null;
+        b.Registry.Add(new("HKCU", path, name, existed, value, kind));
     }
-    static void SetDword(string path,string name,int value){using var k=Registry.CurrentUser.CreateSubKey(path,true);k.SetValue(name,value,RegistryValueKind.DWord);}
+
+    static void SetDwordVerified(string path, string name, int value)
+    {
+        using var k = Registry.CurrentUser.CreateSubKey(path, true)
+            ?? throw new InvalidOperationException($"No se pudo abrir HKCU\\{path}.");
+        k.SetValue(name, value, RegistryValueKind.DWord);
+        var readBack = k.GetValue(name);
+        if (readBack is not int v || v != value)
+            throw new InvalidOperationException($"Windows no confirmó el cambio {name}.");
+    }
+
     static void RestoreRegistry(RegistryBackup x)
     {
-        using var k=Registry.CurrentUser.CreateSubKey(x.Path,true);
-        if(!x.Existed){k.DeleteValue(x.Name,false);return;}
-        var kind=Enum.TryParse<RegistryValueKind>(x.Kind,out var parsed)?parsed:RegistryValueKind.String;
-        object value=x.Value is JsonElement e ? kind==RegistryValueKind.DWord?e.GetInt32():e.ToString() : x.Value??"";
-        k.SetValue(x.Name,value,kind);
+        if (!x.Hive.Equals("HKCU", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("La copia contiene un hive no permitido.");
+
+        using var k = Registry.CurrentUser.CreateSubKey(x.Path, true)
+            ?? throw new InvalidOperationException($"No se pudo abrir HKCU\\{x.Path}.");
+
+        if (!x.Existed)
+        {
+            k.DeleteValue(x.Name, false);
+            return;
+        }
+
+        var kind = Enum.TryParse<RegistryValueKind>(x.Kind, out var parsed) ? parsed : RegistryValueKind.String;
+        k.SetValue(x.Name, ConvertJsonValue(x.Value, kind), kind);
     }
-    async Task<string?> ActiveSchemeAsync()
+
+    static object ConvertJsonValue(object? value, RegistryValueKind kind)
     {
-        var s=await RunAsync("powercfg.exe","/getactivescheme");
-        return Regex.Match(s,@"[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}").Value;
+        if (value is not JsonElement e) return value ?? "";
+
+        return kind switch
+        {
+            RegistryValueKind.DWord => e.GetInt32(),
+            RegistryValueKind.QWord => e.GetInt64(),
+            RegistryValueKind.Binary => e.GetBytesFromBase64(),
+            RegistryValueKind.MultiString => e.EnumerateArray().Select(x => x.GetString() ?? "").ToArray(),
+            RegistryValueKind.String or RegistryValueKind.ExpandString => e.GetString() ?? "",
+            _ => e.ToString()
+        };
     }
-    static async Task<string> RunAsync(string file,string args)
+
+    static async Task<string> RunAsync(string file, string args)
     {
-        using var p=new Process{StartInfo=new(file,args){UseShellExecute=false,RedirectStandardOutput=true,RedirectStandardError=true,CreateNoWindow=true}};
-        p.Start(); var output=await p.StandardOutput.ReadToEndAsync(); var error=await p.StandardError.ReadToEndAsync(); await p.WaitForExitAsync();
-        if(p.ExitCode!=0) throw new InvalidOperationException(error.Length>0?error:$"{file} terminó con código {p.ExitCode}.");
+        using var p = new Process
+        {
+            StartInfo = new(file, args)
+            {
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                CreateNoWindow = true
+            }
+        };
+        p.Start();
+        var outputTask = p.StandardOutput.ReadToEndAsync();
+        var errorTask = p.StandardError.ReadToEndAsync();
+        await p.WaitForExitAsync();
+        var output = await outputTask;
+        var error = await errorTask;
+        if (p.ExitCode != 0) throw new InvalidOperationException(error.Length > 0 ? error : $"{file} terminó con código {p.ExitCode}.");
         return output.Trim();
     }
-    void Log(string text){Directory.CreateDirectory(root);File.AppendAllText(Path.Combine(root,"hyperboost.log"),$"{DateTime.Now:O} {text}{Environment.NewLine}");}
+
+    void Log(string text)
+    {
+        Directory.CreateDirectory(root);
+        File.AppendAllText(Path.Combine(root, "hyperboost.log"), $"{DateTime.Now:O} {text}{Environment.NewLine}");
+    }
 }
