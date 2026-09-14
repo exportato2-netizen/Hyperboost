@@ -30,8 +30,6 @@ public sealed class GamingPersonaService : IDisposable
     const uint MemoryPriorityNormal = 5;
     const uint MemoryPriorityBelowNormal = 4;
 
-    static readonly TimeSpan FocusLossGrace = TimeSpan.FromSeconds(2);
-
     static readonly HashSet<string> SafeAutomaticBackground = new(StringComparer.OrdinalIgnoreCase)
     {
         "OneDrive", "Dropbox", "GoogleDriveFS",
@@ -56,15 +54,16 @@ public sealed class GamingPersonaService : IDisposable
     ulong gameCreationTime;
     bool enabled;
     bool engaged;
-    bool useEcoQos;
-    bool useMemoryPriority;
-    DateTime lastReconcileUtc = DateTime.MinValue;
-    DateTime? focusLostUtc;
+    bool requestedEcoQos;
+    bool requestedMemoryPriority;
+    bool gateAllowsEcoQos;
+    bool? lowMemorySignal;
     string status = "Gaming Persona detenida.";
 
     public bool IsEnabled => enabled;
     public bool IsEngaged => engaged;
     public bool HasPendingRestores => adjustedBackground.Count > 0 && !engaged;
+    public int TargetGamePid => gamePid;
     public int AdjustedBackgroundCount => adjustedBackground.Values.Count(x => x.PowerChanged);
     public int MemoryAdjustedCount => adjustedBackground.Values.Count(x => x.MemoryChanged);
     public string Status => status;
@@ -102,22 +101,64 @@ public sealed class GamingPersonaService : IDisposable
     {
         if (enabled) throw new InvalidOperationException("Gaming Persona ya está armada. Deténla antes de elegir otro juego.");
         if (adjustedBackground.Count > 0)
-            throw new InvalidOperationException("Quedan restauraciones pendientes de una sesión anterior. Usa Detener y restaurar antes de iniciar otra Persona.");
-
+            throw new InvalidOperationException("Quedan restauraciones pendientes. Usa Detener y restaurar antes de iniciar otra Persona.");
         if (!TryReadCreationTime(game.Id, out var creationTime))
             throw new InvalidOperationException("El proceso seleccionado terminó o Windows no permitió verificar su identidad.");
 
         gamePid = game.Id;
         gameCreationTime = creationTime;
-        useEcoQos = ecoQos;
-        useMemoryPriority = memoryPriority;
+        requestedEcoQos = ecoQos;
+        requestedMemoryPriority = memoryPriority;
+        gateAllowsEcoQos = false;
         enabled = true;
         engaged = false;
-        focusLostUtc = null;
-        status = $"Gaming Persona armada para {game.Name} · PID {game.Id}. HyperBoost no modifica el juego; solo administrará competencia segura alrededor de él cuando tenga foco.";
-
-        Tick();
+        status = $"Gaming Persona armada para {game.Name} · PID {game.Id}. Esperando que Windows informe foco del juego; todavía no se aplicó ningún cambio.";
         return status;
+    }
+
+    public string EngageFromGate(bool allowEcoQos)
+    {
+        if (!enabled) return status;
+        if (!IsSameProcess(gamePid, gameCreationTime))
+            return HandleGameExited();
+
+        gateAllowsEcoQos = allowEcoQos;
+        engaged = true;
+        ReconcileBackground();
+        UpdateActiveStatus();
+        return status;
+    }
+
+    public string PauseAndRestore()
+    {
+        if (!engaged) return status;
+        var restore = Disengage();
+        gateAllowsEcoQos = false;
+        status = restore.Errors == 0
+            ? "Juego fuera de foco: Gaming Persona quedó armada pero inactiva y restauró el background."
+            : $"Juego fuera de foco: quedaron {restore.Errors} restauraciones pendientes para reintento.";
+        return status;
+    }
+
+    public string HandleGameExited()
+    {
+        var restore = Disengage();
+        enabled = false;
+        gamePid = 0;
+        gameCreationTime = 0;
+        gateAllowsEcoQos = false;
+        status = restore.Errors == 0
+            ? "El juego terminó. Gaming Persona restauró los procesos secundarios y se desarmó."
+            : $"El juego terminó. Quedaron {restore.Errors} restauraciones pendientes; HyperBoost conserva sus snapshots para reintento.";
+        return status;
+    }
+
+    public void NotifyMemoryPressure(bool low)
+    {
+        lowMemorySignal = low;
+        if (!engaged) return;
+        ReconcileBackground();
+        UpdateActiveStatus();
     }
 
     public string Stop()
@@ -129,63 +170,11 @@ public sealed class GamingPersonaService : IDisposable
         enabled = false;
         gamePid = 0;
         gameCreationTime = 0;
-        focusLostUtc = null;
+        gateAllowsEcoQos = false;
         status = restore.Errors == 0
             ? "Gaming Persona detenida. Los ajustes temporales de background fueron restaurados."
-            : $"Gaming Persona detenida. Quedan {restore.Errors} restauraciones pendientes; HyperBoost conservará su estado para poder reintentarlas.";
+            : $"Gaming Persona detenida. Quedan {restore.Errors} restauraciones pendientes; puedes pulsar Detener y restaurar nuevamente.";
         return status;
-    }
-
-    public void Tick()
-    {
-        if (!enabled) return;
-
-        if (!IsSameProcess(gamePid, gameCreationTime))
-        {
-            focusLostUtc = null;
-            var restore = Disengage();
-            enabled = false;
-            status = restore.Errors == 0
-                ? "El juego terminó. Gaming Persona restauró los procesos secundarios y se desarmó."
-                : $"El juego terminó. Gaming Persona se desarmó y quedaron {restore.Errors} restauraciones pendientes.";
-            return;
-        }
-
-        var now = DateTime.UtcNow;
-        var foregroundPid = GetForegroundProcessId();
-        if (foregroundPid == gamePid)
-        {
-            focusLostUtc = null;
-            if (!engaged)
-            {
-                engaged = true;
-                ReconcileBackground();
-                UpdateActiveStatus();
-                return;
-            }
-
-            if (now - lastReconcileUtc >= TimeSpan.FromSeconds(5))
-            {
-                ReconcileBackground();
-                UpdateActiveStatus();
-            }
-            return;
-        }
-
-        if (!engaged) return;
-
-        focusLostUtc ??= now;
-        if (now - focusLostUtc.Value < FocusLossGrace)
-        {
-            status = "Pérdida breve de foco detectada; Gaming Persona mantiene el estado durante 2 s para evitar ciclos por overlays/Alt+Tab corto.";
-            return;
-        }
-
-        focusLostUtc = null;
-        var result = Disengage();
-        status = result.Errors == 0
-            ? "Juego fuera de foco: Gaming Persona quedó en espera y restauró el background."
-            : $"Juego fuera de foco: Gaming Persona quedó en espera con {result.Errors} restauraciones pendientes.";
     }
 
     RestoreResult Disengage()
@@ -198,7 +187,6 @@ public sealed class GamingPersonaService : IDisposable
 
     void ReconcileBackground()
     {
-        lastReconcileUtc = DateTime.UtcNow;
         var memoryPressure = ReadMemoryPressure();
         var currentSession = Process.GetCurrentProcess().SessionId;
         var seen = new HashSet<int>();
@@ -235,6 +223,7 @@ public sealed class GamingPersonaService : IDisposable
                     }
                     else
                     {
+                        ReconcilePowerPolicy(snapshot);
                         ReconcileMemoryPriority(snapshot, memoryPressure);
                     }
                 }
@@ -271,7 +260,7 @@ public sealed class GamingPersonaService : IDisposable
 
         cpuObservations[process.Id] = new(totalCpu, now, workingSet);
         var elapsedMs = Math.Max(1, (now - previous.TimestampUtc).TotalMilliseconds);
-        var cpu = (totalCpu - previous.CpuTime).TotalMilliseconds / elapsedMs / Math.Max(1, Environment.ProcessorCount) * 100d;
+        var cpu = Math.Max(0, (totalCpu - previous.CpuTime).TotalMilliseconds) / elapsedMs / Math.Max(1, Environment.ProcessorCount) * 100d;
         return cpu >= 0.15 || workingSet >= 200L * 1024 * 1024;
     }
 
@@ -294,7 +283,7 @@ public sealed class GamingPersonaService : IDisposable
             var snapshot = new BackgroundSnapshot(pid, name, creation, power, memory.MemoryPriority, havePower, haveMemory);
 
             var appOwnsExecutionQos = havePower && (power.ControlMask & PowerThrottlingExecutionSpeed) != 0;
-            if (useEcoQos && havePower && !appOwnsExecutionQos)
+            if (requestedEcoQos && gateAllowsEcoQos && havePower && !appOwnsExecutionQos)
             {
                 var eco = power;
                 eco.Version = 1;
@@ -304,7 +293,7 @@ public sealed class GamingPersonaService : IDisposable
                     snapshot.PowerChanged = true;
             }
 
-            if (useMemoryPriority && pressure.ShouldLowerBackgroundMemory && haveMemory && memory.MemoryPriority == MemoryPriorityNormal)
+            if (requestedMemoryPriority && pressure.ShouldLowerBackgroundMemory && haveMemory && memory.MemoryPriority == MemoryPriorityNormal)
             {
                 var lower = new MemoryPriorityInformation { MemoryPriority = MemoryPriorityBelowNormal };
                 if (SetProcessInformationMemory(handle, ProcessMemoryPriority, ref lower, memorySize))
@@ -319,9 +308,33 @@ public sealed class GamingPersonaService : IDisposable
         }
     }
 
+    void ReconcilePowerPolicy(BackgroundSnapshot snapshot)
+    {
+        if (!snapshot.PowerAvailable || snapshot.PowerChanged || !requestedEcoQos || !gateAllowsEcoQos) return;
+        if (!IsSameProcess(snapshot.Pid, snapshot.CreationTime)) return;
+
+        var handle = OpenProcess(ProcessQueryLimitedInformation | ProcessSetInformation, false, snapshot.Pid);
+        if (handle == IntPtr.Zero) return;
+        try
+        {
+            var current = new ProcessPowerThrottlingState { Version = 1 };
+            var size = (uint)Marshal.SizeOf<ProcessPowerThrottlingState>();
+            if (!GetProcessInformationPower(handle, ProcessPowerThrottling, ref current, size)) return;
+            if ((current.ControlMask & PowerThrottlingExecutionSpeed) != 0) return;
+
+            current.ControlMask |= PowerThrottlingExecutionSpeed;
+            current.StateMask |= PowerThrottlingExecutionSpeed;
+            if (SetProcessInformationPower(handle, ProcessPowerThrottling, ref current, size)) snapshot.PowerChanged = true;
+        }
+        finally
+        {
+            CloseHandle(handle);
+        }
+    }
+
     void ReconcileMemoryPriority(BackgroundSnapshot snapshot, MemoryPressure pressure)
     {
-        if (!useMemoryPriority || !snapshot.MemoryAvailable || snapshot.OriginalMemoryPriority != MemoryPriorityNormal) return;
+        if (!requestedMemoryPriority || !snapshot.MemoryAvailable || snapshot.OriginalMemoryPriority != MemoryPriorityNormal) return;
         if (!IsSameProcess(snapshot.Pid, snapshot.CreationTime)) return;
 
         var handle = OpenProcess(ProcessQueryLimitedInformation | ProcessSetInformation, false, snapshot.Pid);
@@ -343,7 +356,6 @@ public sealed class GamingPersonaService : IDisposable
             {
                 if (current.MemoryPriority != MemoryPriorityBelowNormal)
                 {
-                    // Otra aplicación cambió la prioridad después de HyperBoost: cedemos propiedad sin escribir.
                     snapshot.MemoryChanged = false;
                     return;
                 }
@@ -361,25 +373,12 @@ public sealed class GamingPersonaService : IDisposable
     int RestoreBackground()
     {
         var errors = 0;
-        foreach (var pid in adjustedBackground.Keys.ToList())
+        foreach (var (pid, snapshot) in adjustedBackground.ToList())
         {
-            var snapshot = adjustedBackground[pid];
-            if (!IsSameProcess(snapshot.Pid, snapshot.CreationTime))
-            {
+            if (!IsSameProcess(snapshot.Pid, snapshot.CreationTime) || RestoreBackgroundProcess(snapshot))
                 adjustedBackground.Remove(pid);
-                cpuObservations.Remove(pid);
-                continue;
-            }
-
-            if (RestoreBackgroundProcess(snapshot))
-            {
-                adjustedBackground.Remove(pid);
-                cpuObservations.Remove(pid);
-            }
             else
-            {
                 errors++;
-            }
         }
         return errors;
     }
@@ -387,49 +386,46 @@ public sealed class GamingPersonaService : IDisposable
     bool RestoreBackgroundProcess(BackgroundSnapshot snapshot)
     {
         if (!IsSameProcess(snapshot.Pid, snapshot.CreationTime)) return true;
-        if (!snapshot.PowerChanged && !snapshot.MemoryChanged) return true;
-
         var handle = OpenProcess(ProcessQueryLimitedInformation | ProcessSetInformation, false, snapshot.Pid);
         if (handle == IntPtr.Zero) return false;
 
         try
         {
             var ok = true;
-
             if (snapshot.PowerChanged && snapshot.PowerAvailable)
             {
-                var current = new ProcessPowerThrottlingState { Version = 1 };
                 var size = (uint)Marshal.SizeOf<ProcessPowerThrottlingState>();
+                var current = new ProcessPowerThrottlingState { Version = 1 };
                 if (!GetProcessInformationPower(handle, ProcessPowerThrottling, ref current, size))
                 {
                     ok = false;
                 }
                 else
                 {
-                    var currentControl = (current.ControlMask & PowerThrottlingExecutionSpeed) != 0;
-                    var currentState = (current.StateMask & PowerThrottlingExecutionSpeed) != 0;
-                    if (currentControl && currentState)
+                    var stillOurs = (current.ControlMask & PowerThrottlingExecutionSpeed) != 0 &&
+                                    (current.StateMask & PowerThrottlingExecutionSpeed) != 0;
+                    if (!stillOurs)
                     {
-                        // Restauramos solo el bit que HyperBoost tomó, preservando timers y otros bits nuevos.
-                        var originalControl = (snapshot.OriginalPower.ControlMask & PowerThrottlingExecutionSpeed) != 0;
-                        var originalState = (snapshot.OriginalPower.StateMask & PowerThrottlingExecutionSpeed) != 0;
-                        var restored = current;
-                        restored.ControlMask = originalControl
-                            ? restored.ControlMask | PowerThrottlingExecutionSpeed
-                            : restored.ControlMask & ~PowerThrottlingExecutionSpeed;
-                        restored.StateMask = originalState
-                            ? restored.StateMask | PowerThrottlingExecutionSpeed
-                            : restored.StateMask & ~PowerThrottlingExecutionSpeed;
-
-                        if (SetProcessInformationPower(handle, ProcessPowerThrottling, ref restored, size))
-                            snapshot.PowerChanged = false;
-                        else
-                            ok = false;
+                        snapshot.PowerChanged = false;
                     }
                     else
                     {
-                        // La app/Windows cambió el mismo bit después: no lo pisamos.
-                        snapshot.PowerChanged = false;
+                        var original = snapshot.OriginalPower;
+                        if ((original.ControlMask & PowerThrottlingExecutionSpeed) != 0)
+                            current.ControlMask |= PowerThrottlingExecutionSpeed;
+                        else
+                            current.ControlMask &= ~PowerThrottlingExecutionSpeed;
+
+                        if ((original.StateMask & PowerThrottlingExecutionSpeed) != 0)
+                            current.StateMask |= PowerThrottlingExecutionSpeed;
+                        else
+                            current.StateMask &= ~PowerThrottlingExecutionSpeed;
+
+                        current.Version = 1;
+                        if (SetProcessInformationPower(handle, ProcessPowerThrottling, ref current, size))
+                            snapshot.PowerChanged = false;
+                        else
+                            ok = false;
                     }
                 }
             }
@@ -442,18 +438,17 @@ public sealed class GamingPersonaService : IDisposable
                 {
                     ok = false;
                 }
-                else if (current.MemoryPriority == MemoryPriorityBelowNormal)
+                else if (current.MemoryPriority != MemoryPriorityBelowNormal)
+                {
+                    snapshot.MemoryChanged = false;
+                }
+                else
                 {
                     var original = new MemoryPriorityInformation { MemoryPriority = snapshot.OriginalMemoryPriority };
                     if (SetProcessInformationMemory(handle, ProcessMemoryPriority, ref original, size))
                         snapshot.MemoryChanged = false;
                     else
                         ok = false;
-                }
-                else
-                {
-                    // Otra autoridad cambió la prioridad: preservamos su valor actual.
-                    snapshot.MemoryChanged = false;
                 }
             }
 
@@ -468,31 +463,33 @@ public sealed class GamingPersonaService : IDisposable
     void UpdateActiveStatus()
     {
         var pressure = ReadMemoryPressure();
-        status = $"Gaming Persona ACTIVA · juego gestionado por Windows/NVIDIA · background EcoQoS: {AdjustedBackgroundCount} · memoria 5→4: {MemoryAdjustedCount} · RAM usada: {pressure.MemoryLoad}% ({pressure.AvailableGb:0.0} GB libres).";
+        status = $"Gaming Persona ACTIVA · Gate EcoQoS: {(gateAllowsEcoQos ? "permitido" : "no necesario")} · background EcoQoS: {AdjustedBackgroundCount} · memoria 5→4: {MemoryAdjustedCount} · RAM usada: {pressure.MemoryLoad}% ({pressure.AvailableGb:0.0} GB libres).";
     }
 
-    public async Task<IReadOnlyList<InterferenceSample>> ScanInterferenceAsync(int excludedGamePid)
+    public async Task<IReadOnlyList<InterferenceSample>> ScanInterferenceAsync(int excludedGamePid, CancellationToken cancellationToken = default)
     {
         var first = CaptureInterferencePoints(excludedGamePid);
-        await Task.Delay(800);
+        var clock = Stopwatch.StartNew();
+        await Task.Delay(800, cancellationToken);
         var second = CaptureInterferencePoints(excludedGamePid);
+        clock.Stop();
+        var seconds = Math.Max(0.001, clock.Elapsed.TotalSeconds);
 
         var result = new List<InterferenceSample>();
         foreach (var (pid, b) in second)
         {
-            if (!first.TryGetValue(pid, out var a)) continue;
-            if (a.CreationTime != b.CreationTime || !a.Name.Equals(b.Name, StringComparison.OrdinalIgnoreCase)) continue;
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!first.TryGetValue(pid, out var a) || a.CreationTime != b.CreationTime) continue;
 
-            var seconds = Math.Max(0.001, (b.Timestamp - a.Timestamp) / (double)Stopwatch.Frequency);
             var cpuMs = Math.Max(0, (b.CpuTime - a.CpuTime).TotalMilliseconds);
             var cpuPercent = cpuMs / (seconds * 1000d) / Math.Max(1, Environment.ProcessorCount) * 100d;
-            var io = Math.Max(0, b.IoBytes - a.IoBytes) / seconds / 1_048_576d;
+            var io = Math.Max(0, (double)b.IoBytes - a.IoBytes) / seconds / 1_048_576d;
             var workingMb = b.WorkingSetBytes / 1_048_576d;
             if (cpuPercent < 0.03 && io < 0.05 && workingMb < 100) continue;
 
             var eligible = SafeAutomaticBackground.Contains(b.Name);
             var recommendation = eligible
-                ? "Elegible para EcoQoS conservador mientras el juego tenga foco, salvo que la app ya gestione su propio QoS."
+                ? "Candidato seguro; el Bottleneck Gate decide si EcoQoS aporta algo en esta muestra."
                 : NeverAutomatic.Contains(b.Name)
                     ? "Solo observar: Windows/NVIDIA, multimedia, launcher, overlay, periférico o anti-cheat mantienen autoridad."
                     : "Solo diagnóstico; HyperBoost no lo modifica automáticamente.";
@@ -521,15 +518,8 @@ public sealed class GamingPersonaService : IDisposable
                 try
                 {
                     if (process.Id == excludedGamePid || process.Id == Environment.ProcessId || process.SessionId != currentSession) continue;
-                    if (!TryReadCreationTime(process.Id, out var creationTime)) continue;
-                    var point = new InterferencePoint(
-                        process.ProcessName,
-                        creationTime,
-                        process.TotalProcessorTime,
-                        process.WorkingSet64,
-                        TryReadIoBytes(process.Id),
-                        Stopwatch.GetTimestamp());
-                    map[process.Id] = point;
+                    if (!TryReadCreationTime(process.Id, out var creation)) continue;
+                    map[process.Id] = new(process.ProcessName, creation, process.TotalProcessorTime, process.WorkingSet64, TryReadIoBytes(process.Id));
                 }
                 catch
                 {
@@ -555,21 +545,13 @@ public sealed class GamingPersonaService : IDisposable
         }
     }
 
-    static MemoryPressure ReadMemoryPressure()
+    MemoryPressure ReadMemoryPressure()
     {
         var memory = new MemoryStatusEx { Length = (uint)Marshal.SizeOf<MemoryStatusEx>() };
-        if (!GlobalMemoryStatusEx(ref memory)) return new(0, 0, false);
+        if (!GlobalMemoryStatusEx(ref memory)) return new(0, 0, lowMemorySignal == true);
         var availableGb = memory.AvailablePhysical / 1073741824d;
-        var shouldLower = memory.MemoryLoad >= 75 || availableGb < 6;
+        var shouldLower = lowMemorySignal == true || memory.MemoryLoad >= 75 || availableGb < 6;
         return new(memory.MemoryLoad, availableGb, shouldLower);
-    }
-
-    static int GetForegroundProcessId()
-    {
-        var window = GetForegroundWindow();
-        if (window == IntPtr.Zero) return 0;
-        GetWindowThreadProcessId(window, out var pid);
-        return unchecked((int)pid);
     }
 
     static bool TryReadCreationTime(int pid, out ulong creation)
@@ -604,17 +586,8 @@ public sealed class GamingPersonaService : IDisposable
 
     public void Dispose()
     {
-        // Dos intentos breves: si un proceso niega acceso transitoriamente al cerrar la UI, reintentamos una vez.
-        try
-        {
-            Stop();
-            if (adjustedBackground.Count > 0)
-            {
-                Thread.Sleep(75);
-                Stop();
-            }
-        }
-        catch { /* Los cambios por proceso desaparecen con sus procesos. */ }
+        try { Stop(); }
+        catch { }
     }
 
     sealed class BackgroundSnapshot(
@@ -638,7 +611,7 @@ public sealed class GamingPersonaService : IDisposable
     }
 
     sealed record CpuObservation(TimeSpan CpuTime, DateTime TimestampUtc, long WorkingSetBytes);
-    sealed record InterferencePoint(string Name, ulong CreationTime, TimeSpan CpuTime, long WorkingSetBytes, ulong IoBytes, long Timestamp);
+    sealed record InterferencePoint(string Name, ulong CreationTime, TimeSpan CpuTime, long WorkingSetBytes, ulong IoBytes);
     sealed record RestoreResult(int Errors);
     readonly record struct MemoryPressure(uint MemoryLoad, double AvailableGb, bool ShouldLowerBackgroundMemory);
 
@@ -715,10 +688,4 @@ public sealed class GamingPersonaService : IDisposable
 
     [DllImport("kernel32.dll", SetLastError = true)]
     static extern bool GlobalMemoryStatusEx(ref MemoryStatusEx buffer);
-
-    [DllImport("user32.dll")]
-    static extern IntPtr GetForegroundWindow();
-
-    [DllImport("user32.dll")]
-    static extern uint GetWindowThreadProcessId(IntPtr window, out uint processId);
 }
