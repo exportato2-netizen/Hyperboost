@@ -37,6 +37,20 @@ jobs:
           }
           Copy-Item 'third_party\PresentMon-LICENSE.txt' 'publish\PRESENTMON-LICENSE.txt' -Force
           Write-Host "PresentMon verified: $actual"
+      - name: PresentMon CLI smoke test
+        shell: pwsh
+        run: |
+          $exe = (Resolve-Path 'publish\PresentMon-2.5.1-x64.exe').Path
+          $output = & $exe --help 2>&1 | Out-String
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host $output
+            throw "PresentMon --help exited with code $LASTEXITCODE"
+          }
+          if ($output -notmatch 'process_id' -or $output -notmatch 'hotkey' -or $output -notmatch 'timed') {
+            Write-Host $output
+            throw 'PresentMon CLI help does not expose the capture options required by HyperBoost.'
+          }
+          Write-Host 'PresentMon CLI smoke test OK.'
       - name: Benchmark parser self-test
         shell: pwsh
         run: |
