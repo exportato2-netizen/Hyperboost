@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Globalization;
+using System.Reflection;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -68,7 +69,12 @@ public sealed class AbBenchmarkSession
     readonly List<BenchmarkPlanItem> plan;
     readonly List<BenchmarkCaptureResult> results = [];
 
-    public AbBenchmarkSession(GameProcessCandidate game, int pairs, int captureSeconds)
+    public AbBenchmarkSession(
+        GameProcessCandidate game,
+        int pairs,
+        int captureSeconds,
+        bool useEcoQos,
+        bool useMemoryPriority)
     {
         if (pairs is < 2 or > 9) throw new ArgumentOutOfRangeException(nameof(pairs));
         if (captureSeconds is < 10 or > 300) throw new ArgumentOutOfRangeException(nameof(captureSeconds));
@@ -76,9 +82,13 @@ public sealed class AbBenchmarkSession
         Game = game;
         Pairs = pairs;
         CaptureSeconds = captureSeconds;
+        UseEcoQos = useEcoQos;
+        UseMemoryPriority = useMemoryPriority;
+        HyperBoostVersion = Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? "unknown";
         plan = BuildCounterbalancedPlan(pairs);
 
-        var safeName = string.Concat(game.Name.Select(c => Path.GetInvalidFileNameChars().Contains(c) ? '_' : c));
+        var invalid = Path.GetInvalidFileNameChars();
+        var safeName = string.Concat(game.Name.Select(c => invalid.Contains(c) ? '_' : c));
         RootDirectory = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "HyperBoost", "Benchmarks",
@@ -89,6 +99,9 @@ public sealed class AbBenchmarkSession
     public GameProcessCandidate Game { get; }
     public int Pairs { get; }
     public int CaptureSeconds { get; }
+    public bool UseEcoQos { get; }
+    public bool UseMemoryPriority { get; }
+    public string HyperBoostVersion { get; }
     public string RootDirectory { get; }
     public IReadOnlyList<BenchmarkPlanItem> Plan => plan;
     public IReadOnlyList<BenchmarkCaptureResult> Results => results;
@@ -103,7 +116,11 @@ public sealed class AbBenchmarkSession
         results.Add(result);
     }
 
-    public BenchmarkAnalysis Analyze() => BenchmarkAnalyzer.Analyze(results);
+    public BenchmarkAnalysis Analyze()
+    {
+        var analysis = BenchmarkAnalyzer.Analyze(results);
+        return analysis with { ReportText = BuildSessionHeader() + analysis.ReportText };
+    }
 
     public async Task SaveReportAsync(BenchmarkAnalysis analysis, CancellationToken cancellationToken = default)
     {
@@ -113,10 +130,15 @@ public sealed class AbBenchmarkSession
         var jsonPath = Path.Combine(RootDirectory, "HyperBoost-AB-results.json");
         var payload = new
         {
-            schema = 1,
+            schema = 2,
+            hyperBoostVersion = HyperBoostVersion,
+            presentMonVersion = "2.5.1",
+            presentMonSha256 = PresentMonBenchmarkService.PresentMonExpectedSha256,
             game = Game,
             pairs = Pairs,
             captureSeconds = CaptureSeconds,
+            onPolicies = new { ecoQos = UseEcoQos, memoryPriority = UseMemoryPriority },
+            plan,
             createdAt = DateTime.Now,
             results,
             analysis
@@ -128,13 +150,25 @@ public sealed class AbBenchmarkSession
             cancellationToken);
     }
 
+    string BuildSessionHeader()
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("SESIÓN REPRODUCIBLE")
+          .AppendLine($"HyperBoost: {HyperBoostVersion}")
+          .AppendLine($"PresentMon: 2.5.1 · SHA-256 {PresentMonBenchmarkService.PresentMonExpectedSha256}")
+          .AppendLine($"Juego: {Game.Name} · PID inicial {Game.Id} · {Game.WindowTitle}")
+          .AppendLine($"Plan: {Pairs} pares · {CaptureSeconds}s por pasada · AB/BA contrabalanceado")
+          .AppendLine($"Políticas ON congeladas al crear sesión: EcoQoS={(UseEcoQos ? "sí" : "no")} · Memory Priority={(UseMemoryPriority ? "sí" : "no")}")
+          .AppendLine(new string('-', 72));
+        return sb.ToString();
+    }
+
     static List<BenchmarkPlanItem> BuildCounterbalancedPlan(int pairs)
     {
         var list = new List<BenchmarkPlanItem>(pairs * 2);
         var sequence = 1;
         for (var pair = 1; pair <= pairs; pair++)
         {
-            // AB/BA alternado reduce el sesgo de calentamiento, boost y deriva térmica.
             var first = pair % 2 == 1 ? BenchmarkMode.Off : BenchmarkMode.On;
             var second = first == BenchmarkMode.Off ? BenchmarkMode.On : BenchmarkMode.Off;
             list.Add(new(sequence++, pair, first));
@@ -191,20 +225,15 @@ public sealed class PresentMonBenchmarkService
             WorkingDirectory = sessionDirectory
         };
 
-        psi.ArgumentList.Add("--process_id");
-        psi.ArgumentList.Add(targetPid.ToString(CultureInfo.InvariantCulture));
-        psi.ArgumentList.Add("--output_file");
-        psi.ArgumentList.Add(csvPath);
-        psi.ArgumentList.Add("--hotkey");
-        psi.ArgumentList.Add(CaptureHotkey);
-        psi.ArgumentList.Add("--timed");
-        psi.ArgumentList.Add(captureSeconds.ToString(CultureInfo.InvariantCulture));
+        AddArg(psi, "--process_id", targetPid.ToString(CultureInfo.InvariantCulture));
+        AddArg(psi, "--output_file", csvPath);
+        AddArg(psi, "--hotkey", CaptureHotkey);
+        AddArg(psi, "--timed", captureSeconds.ToString(CultureInfo.InvariantCulture));
         psi.ArgumentList.Add("--terminate_after_timed");
         psi.ArgumentList.Add("--no_console_stats");
         psi.ArgumentList.Add("--exclude_dropped");
         psi.ArgumentList.Add("--no_track_input");
-        psi.ArgumentList.Add("--session_name");
-        psi.ArgumentList.Add($"HB_AB_{targetPid}_{plan.Sequence}_{Guid.NewGuid():N}");
+        AddArg(psi, "--session_name", $"HB_AB_{targetPid}_{plan.Sequence}_{Guid.NewGuid():N}");
 
         using var process = new Process { StartInfo = psi };
         if (!process.Start()) throw new InvalidOperationException("Windows no pudo iniciar PresentMon.");
@@ -214,7 +243,6 @@ public sealed class PresentMonBenchmarkService
 
         try
         {
-            // Da tiempo a PresentMon para registrar su hotkey global. Si muere aquí, el error es inmediato.
             await Task.Delay(700, cancellationToken);
             if (process.HasExited)
             {
@@ -289,18 +317,11 @@ public sealed class PresentMonBenchmarkService
 
         if (rows < 30) throw new InvalidDataException($"PresentMon solo entregó {rows} filas; la muestra es demasiado pequeña para un benchmark.");
 
-        // DisplayedTime es la primera preferencia si cubre la gran mayoría de la captura; si no,
-        // se usa la cadencia de Present() para no mezclar fuentes dentro de una misma pasada.
         var source = candidates.FirstOrDefault(x => collected[x].Count >= Math.Max(30, rows * 0.80));
         if (source is null) throw new InvalidDataException("El CSV no contiene una métrica de frametime utilizable en al menos 80% de las filas.");
 
         var values = collected[source];
-        if (values.Count > 2)
-        {
-            // El primer intervalo puede comenzar antes de la ventana exacta de grabación.
-            values = values.Skip(1).ToList();
-        }
-
+        if (values.Count > 2) values = values.Skip(1).ToList();
         values.Sort();
         if (values.Count < 30) throw new InvalidDataException("Muestra insuficiente después de limpiar los límites de captura.");
 
@@ -370,6 +391,12 @@ public sealed class PresentMonBenchmarkService
         {
             try { Directory.Delete(root, recursive: true); } catch { }
         }
+    }
+
+    static void AddArg(ProcessStartInfo psi, string name, string value)
+    {
+        psi.ArgumentList.Add(name);
+        psi.ArgumentList.Add(value);
     }
 
     static bool IsProcessAlive(int pid)
@@ -554,12 +581,12 @@ public static class BenchmarkAnalyzer
           .AppendLine(verdict)
           .AppendLine()
           .AppendLine($"Pares completos: {pairCount}")
-          .AppendLine($"FPS promedio       OFF {offAvg,8:0.00}   ON {onAvg,8:0.00}   Δ {avgDelta,+0.00;-0.00;0.00}%")
-          .AppendLine($"1% Low (1/p99)     OFF {offLow1,8:0.00}   ON {onLow1,8:0.00}   Δ {low1Delta,+0.00;-0.00;0.00}%")
-          .AppendLine($"0.1% Low (1/p99.9) OFF {offLow01,8:0.00}   ON {onLow01,8:0.00}   Δ {low01Delta,+0.00;-0.00;0.00}%")
-          .AppendLine($"Frametime p95      OFF {offP95,8:0.00}ms ON {onP95,8:0.00}ms mejora {p95Delta,+0.00;-0.00;0.00}%")
-          .AppendLine($"Frametime p99      OFF {offP99,8:0.00}ms ON {onP99,8:0.00}ms mejora {p99Delta,+0.00;-0.00;0.00}%")
-          .AppendLine($"Stutter rate       OFF {offStutter,8:0.000}% ON {onStutter,8:0.000}% mejora {stutterDelta,+0.00;-0.00;0.00}%")
+          .AppendLine($"FPS promedio       OFF {offAvg,8:0.00}   ON {onAvg,8:0.00}   Δ {Signed(avgDelta)}%")
+          .AppendLine($"1% Low (1/p99)     OFF {offLow1,8:0.00}   ON {onLow1,8:0.00}   Δ {Signed(low1Delta)}%")
+          .AppendLine($"0.1% Low (1/p99.9) OFF {offLow01,8:0.00}   ON {onLow01,8:0.00}   Δ {Signed(low01Delta)}%")
+          .AppendLine($"Frametime p95      OFF {offP95,8:0.00}ms ON {onP95,8:0.00}ms mejora {Signed(p95Delta)}%")
+          .AppendLine($"Frametime p99      OFF {offP99,8:0.00}ms ON {onP99,8:0.00}ms mejora {Signed(p99Delta)}%")
+          .AppendLine($"Stutter rate       OFF {offStutter,8:0.000}% ON {onStutter,8:0.000}% mejora {Signed(stutterDelta)}%")
           .AppendLine()
           .AppendLine("RUIDO DE LÍNEA BASE (CV entre pasadas OFF)")
           .AppendLine($"FPS promedio: {noiseAvg:0.00}% · 1% Low: {noiseLow1:0.00}% · p99: {noiseP99:0.00}%")
@@ -567,7 +594,7 @@ public static class BenchmarkAnalyzer
           .AppendLine("DELTA POR PAR (ON vs OFF)");
 
         for (var i = 0; i < pairAvg.Count; i++)
-            sb.AppendLine($"Par {i + 1}: FPS {pairAvg[i],+0.00;-0.00;0.00}% · 1% Low {pairLow1[i],+0.00;-0.00;0.00}% · p99 mejora {pairP99[i],+0.00;-0.00;0.00}%");
+            sb.AppendLine($"Par {i + 1}: FPS {Signed(pairAvg[i])}% · 1% Low {Signed(pairLow1[i])}% · p99 mejora {Signed(pairP99[i])}%");
 
         sb.AppendLine().AppendLine("PASADAS CRUDAS");
         foreach (var x in captures.OrderBy(x => x.Sequence))
@@ -578,6 +605,9 @@ public static class BenchmarkAnalyzer
           .AppendLine("Los CSV originales de PresentMon se conservan junto a este reporte para auditoría.");
         return sb.ToString();
     }
+
+    static string Signed(double value)
+        => value.ToString("+0.00;-0.00;0.00", CultureInfo.InvariantCulture);
 
     static double HigherBetterDelta(double off, double on)
         => Math.Abs(off) < 1e-9 ? 0 : (on - off) / off * 100d;
