@@ -23,7 +23,8 @@ public sealed record Finding(string Severity, string Title, string Detail);
 
 public sealed class BackupSnapshot
 {
-    public int SchemaVersion { get; set; } = 2;
+    // 0 significa formato legado (Beta 0.1, que no incluía este campo).
+    public int SchemaVersion { get; set; }
     public DateTime CreatedUtc { get; set; } = DateTime.UtcNow;
     public bool ApplyCompleted { get; set; }
     public bool PowerSchemeChanged { get; set; }
