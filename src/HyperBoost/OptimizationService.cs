@@ -18,19 +18,20 @@ public sealed class OptimizationService
         if (File.Exists(LastBackupPath))
         {
             var stale = await LoadBackupAsync();
-            if (stale?.ApplyCompleted == true)
+            if (stale is null)
+                return $"Existe una copia de seguridad que no se puede leer en {LastBackupPath}. Por seguridad no se aplicaron nuevos cambios ni se sobrescribió el archivo.";
+
+            if (stale.ApplyCompleted)
                 return "Ya existe un perfil aplicado. Restaura los cambios antes de volver a aplicar para no perder el estado original.";
 
-            if (stale is not null)
-            {
-                await RestoreSnapshotAsync(stale);
-                File.Delete(LastBackupPath);
-                Log("Se recuperó una copia incompleta antes de volver a aplicar.");
-            }
+            await RestoreSnapshotAsync(stale);
+            File.Delete(LastBackupPath);
+            Log("Se recuperó una copia incompleta antes de volver a aplicar.");
         }
 
         var b = new BackupSnapshot
         {
+            SchemaVersion = 2,
             ActivePowerScheme = null,
             PowerSchemeChanged = false,
             ApplyCompleted = false
@@ -74,7 +75,7 @@ public sealed class OptimizationService
     {
         if (!File.Exists(LastBackupPath)) return "No existe una copia de seguridad previa.";
         var b = await LoadBackupAsync();
-        if (b is null) return "La copia no se pudo leer.";
+        if (b is null) return $"La copia no se pudo leer y se dejó intacta en {LastBackupPath}.";
 
         await RestoreSnapshotAsync(b);
         File.Delete(LastBackupPath);
@@ -100,6 +101,11 @@ public sealed class OptimizationService
         catch (JsonException ex)
         {
             Log("Copia JSON inválida: " + ex.Message);
+            return null;
+        }
+        catch (IOException ex)
+        {
+            Log("No se pudo leer la copia: " + ex.Message);
             return null;
         }
     }
