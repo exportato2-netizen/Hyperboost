@@ -6,7 +6,7 @@
  <Grid Margin="22">
   <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
   <DockPanel>
-   <StackPanel><TextBlock Text="HYPERBOOST" FontSize="30" FontWeight="Bold" Foreground="{StaticResource Accent}"/><TextBlock Text="Beta 0.3.1 · Gaming Persona complementaria a Windows 11 y NVIDIA" Foreground="#94A3B8"/></StackPanel>
+   <StackPanel><TextBlock Text="HYPERBOOST" FontSize="30" FontWeight="Bold" Foreground="{StaticResource Accent}"/><TextBlock Text="Beta 0.3.2 · Gaming Persona reversible y conflict-aware" Foreground="#94A3B8"/></StackPanel>
    <Border DockPanel.Dock="Right" Background="#15352F" CornerRadius="16" Padding="12,6" VerticalAlignment="Center"><TextBlock Text="GPU: SOLO LECTURA" Foreground="#72F2CA" FontWeight="Bold"/></Border>
   </DockPanel>
 
@@ -31,7 +31,7 @@
    <TabItem Header="Gaming Persona">
     <ScrollViewer Background="#101620">
      <StackPanel Margin="20">
-      <TextBlock Text="GAMING PERSONA · BETA 0.3.1" FontSize="18" FontWeight="Bold" Foreground="{StaticResource Accent}"/>
+      <TextBlock Text="GAMING PERSONA · BETA 0.3.2" FontSize="18" FontWeight="Bold" Foreground="{StaticResource Accent}"/>
       <TextBlock Margin="0,7,0,14" TextWrapping="Wrap" Foreground="#B8C4D6" Text="Selecciona el juego ya abierto. HyperBoost no cambia prioridad, timers, gráficos ni QoS del juego: Windows 11, Game Mode, el driver y NVIDIA App mantienen autoridad. La Persona solo reduce competencia segura alrededor del juego mientras ese PID tenga foco."/>
 
       <Grid>
@@ -42,10 +42,10 @@
 
       <TextBlock Margin="0,18,0,7" Text="CAPA ADAPTATIVA PROPIA DE HYPERBOOST" FontWeight="Bold"/>
       <CheckBox x:Name="PersonaEcoQosCheck" IsChecked="True" Margin="2,4" Content="EcoQoS solo para sincronizadores/procesos de escritorio de la lista segura"/>
-      <TextBlock Margin="24,0,0,7" TextWrapping="Wrap" Foreground="#94A3B8" Text="No se aplica a navegadores, Steam/Epic, Discord, audio, OBS, overlays, NVIDIA, anti-cheat ni periféricos. Si una app ya administra explícitamente su QoS, HyperBoost la respeta."/>
+      <TextBlock Margin="24,0,0,7" TextWrapping="Wrap" Foreground="#94A3B8" Text="No se aplica a navegadores, Steam/Epic, Discord, audio, OBS, overlays, NVIDIA, anti-cheat ni periféricos. Si una app cambia su QoS después, HyperBoost preserva ese cambio y no lo pisa al restaurar."/>
 
       <CheckBox x:Name="PersonaMemoryCheck" IsChecked="True" Margin="2,6,0,4" Content="Memory Priority adaptativa (5 → 4 únicamente bajo presión real de RAM)"/>
-      <TextBlock Margin="24,0,0,12" TextWrapping="Wrap" Foreground="#94A3B8" Text="Solo para la misma lista segura y únicamente con ≥75% de RAM usada o menos de 6 GB disponibles. Si la app ya tiene una prioridad distinta de 5, no se modifica."/>
+      <TextBlock Margin="24,0,0,12" TextWrapping="Wrap" Foreground="#94A3B8" Text="Solo para la misma lista segura y únicamente con ≥75% de RAM usada o menos de 6 GB disponibles. Si otra app cambia la prioridad después, HyperBoost conserva ese nuevo valor."/>
 
       <StackPanel Orientation="Horizontal" Margin="0,4,0,12">
        <Button x:Name="StartPersonaButton" Content="Armar Gaming Persona" Click="StartPersona_Click"/>
@@ -58,12 +58,12 @@
 
       <Separator Margin="0,2,0,16"/>
       <TextBlock Text="ESCÁNER DE INTERFERENCIAS · SOLO LECTURA" FontSize="16" FontWeight="Bold" Foreground="{StaticResource Accent}"/>
-      <TextBlock Margin="0,6,0,10" TextWrapping="Wrap" Foreground="#B8C4D6" Text="Mide CPU, I/O y memoria por proceso. No duplica el overlay de NVIDIA: su objetivo es descubrir qué proceso de Windows está compitiendo con el juego, no mostrar FPS ni telemetría de GPU."/>
+      <TextBlock Margin="0,6,0,10" TextWrapping="Wrap" Foreground="#B8C4D6" Text="Mide CPU, I/O y memoria por proceso usando tiempo real monotónico y verifica PID + tiempo de creación. No duplica el overlay de NVIDIA y no modifica procesos."/>
       <Button x:Name="ScanInterferenceButton" Content="Medir interferencias ahora" HorizontalAlignment="Left" Click="ScanInterference_Click"/>
       <TextBox x:Name="InterferenceText" Margin="0,10,0,4" MinHeight="180" IsReadOnly="True" TextWrapping="NoWrap" FontFamily="Consolas" FontSize="12" Padding="10" Background="#0B111A" Foreground="#DCE7F5" BorderThickness="0" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" Text="Aún no se ha realizado una medición."/>
 
       <Border Background="#2A2115" CornerRadius="8" Padding="12" Margin="0,14,0,0">
-       <TextBlock TextWrapping="Wrap" Foreground="#F6D58B" Text="Sin solapamiento: HyperBoost no modifica Game Mode/Game DVR, HAGS, optimizaciones para juegos en ventanas, gráficos, DLSS, Smooth Motion, Low Latency/Reflex, G-SYNC, límites de FPS, ShadowPlay, perfiles 3D, auto-tuning de GPU ni planes de energía."/>
+       <TextBlock TextWrapping="Wrap" Foreground="#F6D58B" Text="Seguridad de ejecución: una pérdida breve de foco tiene 2 s de tolerancia para evitar ciclos por overlays. Las restauraciones fallidas se conservan para reintento. HyperBoost no modifica Game Mode/Game DVR, HAGS, gráficos, DLSS, Reflex, G-SYNC, ShadowPlay, perfiles 3D ni planes de energía."/>
       </Border>
      </StackPanel>
     </ScrollViewer>
@@ -71,7 +71,7 @@
 
    <TabItem Header="Qué modifica">
     <ScrollViewer Background="#101620">
-     <TextBlock Padding="20" TextWrapping="Wrap" FontSize="15" Text="WINDOWS/NVIDIA: NO LOS DUPLICA&#10;Game Mode, captura/Game DVR, optimizaciones para juegos en ventanas, HAGS, plan de energía y políticas del juego quedan en Windows. DLSS, Smooth Motion, Low Latency/Reflex, G-SYNC, límites de FPS, ShadowPlay, perfiles 3D y tuning quedan en NVIDIA App/driver.&#10;&#10;GAMING PERSONA TEMPORAL&#10;Solo mientras el juego seleccionado está en primer plano, una allowlist pequeña de procesos secundarios no críticos puede pasar a EcoQoS. Si una app ya controla explícitamente su QoS, HyperBoost no la pisa. Bajo presión real de RAM, esos mismos procesos pueden bajar Memory Priority de 5 a 4. Alt+Tab restaura el estado anterior.&#10;&#10;ESCÁNER DE INTERFERENCIAS&#10;Mide CPU, working set e I/O por proceso. No muestra FPS ni telemetría GPU, por lo que no reemplaza ni duplica el overlay de NVIDIA.&#10;&#10;COMPATIBILIDAD&#10;El botón inferior de restauración solo aparece útil si existe un backup creado por una beta anterior. Beta 0.3.1 ya no escribe Game Mode, Game DVR ni planes de energía."/>
+     <TextBlock Padding="20" TextWrapping="Wrap" FontSize="15" Text="WINDOWS/NVIDIA: NO LOS DUPLICA&#10;Game Mode, captura/Game DVR, optimizaciones para juegos en ventanas, HAGS, plan de energía y políticas del juego quedan en Windows. DLSS, Smooth Motion, Low Latency/Reflex, G-SYNC, límites de FPS, ShadowPlay, perfiles 3D y tuning quedan en NVIDIA App/driver.&#10;&#10;GAMING PERSONA TEMPORAL&#10;Solo mientras el juego seleccionado está en primer plano, una allowlist pequeña de procesos secundarios no críticos puede pasar a EcoQoS. Bajo presión real de RAM, esos mismos procesos pueden bajar Memory Priority de 5 a 4. HyperBoost restaura únicamente los bits/valores que todavía reconoce como propios y preserva cambios posteriores de Windows u otras apps.&#10;&#10;ROBUSTEZ 0.3.2&#10;Hay tolerancia de 2 s ante pérdida breve de foco, PID + tiempo de creación para evitar reutilización, medición con reloj monotónico y reintento de restauraciones que fallen temporalmente.&#10;&#10;COMPATIBILIDAD&#10;El botón inferior de restauración solo aparece útil si existe un backup creado por una beta anterior. Beta 0.3.2 no escribe Game Mode, Game DVR ni planes de energía."/>
     </ScrollViewer>
    </TabItem>
   </TabControl>
