@@ -1,7 +1,7 @@
-using System.Diagnostics;
 using System.Text;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Threading;
 
 namespace HyperBoost;
 
@@ -9,13 +9,18 @@ public partial class MainWindow : Window
 {
     readonly HardwareScanner scanner = new();
     readonly OptimizationService optimizer = new();
-    readonly GameBoostService gameBoost = new();
+    readonly GamingPersonaService persona = new();
+    readonly DispatcherTimer personaTimer;
     bool busy;
     bool scanCompleted;
 
     public MainWindow()
     {
         InitializeComponent();
+        // Seguimiento ligero del foco. El barrido de procesos secundarios se hace internamente cada 5 s.
+        personaTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(1200) };
+        personaTimer.Tick += PersonaTimer_Tick;
+        personaTimer.Start();
         RefreshProcesses();
         UpdateControls();
     }
@@ -108,7 +113,7 @@ public partial class MainWindow : Window
     void RefreshProcesses()
     {
         var selectedPid = (GameProcessCombo.SelectedItem as GameProcessCandidate)?.Id;
-        var candidates = gameBoost.GetCandidates();
+        var candidates = persona.GetCandidates();
         GameProcessCombo.ItemsSource = candidates;
         if (selectedPid is int pid)
             GameProcessCombo.SelectedItem = candidates.FirstOrDefault(x => x.Id == pid);
@@ -119,47 +124,90 @@ public partial class MainWindow : Window
 
     void GameProcessCombo_SelectionChanged(object sender, SelectionChangedEventArgs e) => UpdateControls();
 
-    void StartBoost_Click(object sender, RoutedEventArgs e)
+    void StartPersona_Click(object sender, RoutedEventArgs e)
     {
         if (GameProcessCombo.SelectedItem is not GameProcessCandidate game) return;
         try
         {
-            BoostStatus.Text = gameBoost.Start(
-                game.Id,
+            PersonaStatus.Text = persona.Start(
+                game,
                 BoostPriorityCheck.IsChecked == true,
-                HonorTimersCheck.IsChecked == true);
+                HonorTimersCheck.IsChecked == true,
+                PersonaEcoQosCheck.IsChecked == true,
+                PersonaMemoryCheck.IsChecked == true,
+                IncludeOptionalBackgroundCheck.IsChecked == true);
         }
         catch (Exception ex)
         {
-            MessageBox.Show(ex.Message, "No se pudo iniciar el boost", MessageBoxButton.OK, MessageBoxImage.Warning);
-            BoostStatus.Text = "No se aplicaron cambios al proceso.";
+            MessageBox.Show(ex.Message, "No se pudo armar Gaming Persona", MessageBoxButton.OK, MessageBoxImage.Warning);
+            PersonaStatus.Text = "Gaming Persona no realizó cambios.";
         }
         UpdateControls();
     }
 
-    void StopBoost_Click(object sender, RoutedEventArgs e)
+    void StopPersona_Click(object sender, RoutedEventArgs e)
     {
         try
         {
-            BoostStatus.Text = gameBoost.Stop();
+            PersonaStatus.Text = persona.Stop();
         }
         catch (Exception ex)
         {
-            MessageBox.Show(ex.Message, "No se pudo detener el boost", MessageBoxButton.OK, MessageBoxImage.Warning);
+            MessageBox.Show(ex.Message, "No se pudo detener Gaming Persona", MessageBoxButton.OK, MessageBoxImage.Warning);
         }
         RefreshProcesses();
     }
 
-    void OpenGraphics_Click(object sender, RoutedEventArgs e)
+    async void ScanInterference_Click(object sender, RoutedEventArgs e)
     {
+        var excludedPid = (GameProcessCombo.SelectedItem as GameProcessCandidate)?.Id ?? 0;
+        SetBusy(true, "Midiendo interferencias de procesos...");
         try
         {
-            Process.Start(new ProcessStartInfo("ms-settings:display-advancedgraphics") { UseShellExecute = true });
+            var samples = await persona.ScanInterferenceAsync(excludedPid);
+            var sb = new StringBuilder();
+            sb.AppendLine("PROCESO                     PID     CPU%     RAM MB    I/O MB/s");
+            sb.AppendLine(new string('-', 69));
+            foreach (var x in samples)
+            {
+                sb.AppendLine($"{TrimTo(x.Process, 26),-26} {x.Pid,7} {x.CpuPercent,7:0.00} {x.WorkingSetMb,10:0} {x.IoMbPerSec,10:0.00}");
+                sb.AppendLine($"  ↳ {x.Recommendation}");
+            }
+            if (samples.Count == 0) sb.AppendLine("No se detectó actividad relevante durante la ventana de medición.");
+            InterferenceText.Text = sb.ToString();
+            StatusText.Text = "Medición completada. El escáner no modificó ningún proceso.";
         }
-        catch
+        catch (Exception ex)
         {
-            Process.Start(new ProcessStartInfo("ms-settings:display") { UseShellExecute = true });
+            MessageBox.Show(ex.Message, "No se pudo medir interferencias", MessageBoxButton.OK, MessageBoxImage.Warning);
+            StatusText.Text = "La medición de interferencias falló sin aplicar cambios.";
         }
+        finally
+        {
+            SetBusy(false);
+        }
+    }
+
+    static string TrimTo(string value, int max)
+        => value.Length <= max ? value : value[..Math.Max(1, max - 1)] + "…";
+
+    void PersonaTimer_Tick(object? sender, EventArgs e)
+    {
+        var wasEnabled = persona.IsEnabled;
+        try
+        {
+            persona.Tick();
+            PersonaStatus.Text = persona.Status;
+        }
+        catch (Exception ex)
+        {
+            PersonaStatus.Text = "Gaming Persona encontró un error y no forzó el cambio: " + ex.Message;
+        }
+
+        if (wasEnabled && !persona.IsEnabled)
+            RefreshProcesses();
+        else
+            UpdateControls();
     }
 
     void SetBusy(bool value, string? text = null)
@@ -172,20 +220,32 @@ public partial class MainWindow : Window
 
     void UpdateControls()
     {
-        ScanButton.IsEnabled = !busy;
-        ApplyButton.IsEnabled = !busy && scanCompleted;
-        RestoreButton.IsEnabled = !busy && optimizer.HasBackup;
-        RefreshProcessesButton.IsEnabled = !busy && !gameBoost.IsActive;
-        GameProcessCombo.IsEnabled = !busy && !gameBoost.IsActive;
-        BoostPriorityCheck.IsEnabled = !busy && !gameBoost.IsActive;
-        HonorTimersCheck.IsEnabled = !busy && !gameBoost.IsActive;
-        StartBoostButton.IsEnabled = !busy && !gameBoost.IsActive && GameProcessCombo.SelectedItem is GameProcessCandidate;
-        StopBoostButton.IsEnabled = !busy && gameBoost.IsActive;
+        var personaLocked = persona.IsEnabled;
+
+        // Los barridos WMI y las escrituras persistentes se bloquean mientras la Persona está armada
+        // para que HyperBoost no genere trabajo innecesario durante el juego.
+        ScanButton.IsEnabled = !busy && !personaLocked;
+        ApplyButton.IsEnabled = !busy && scanCompleted && !personaLocked;
+        RestoreButton.IsEnabled = !busy && optimizer.HasBackup && !personaLocked;
+
+        RefreshProcessesButton.IsEnabled = !busy && !personaLocked;
+        GameProcessCombo.IsEnabled = !busy && !personaLocked;
+        PersonaEcoQosCheck.IsEnabled = !busy && !personaLocked;
+        PersonaMemoryCheck.IsEnabled = !busy && !personaLocked;
+        IncludeOptionalBackgroundCheck.IsEnabled = !busy && !personaLocked;
+        BoostPriorityCheck.IsEnabled = !busy && !personaLocked;
+        HonorTimersCheck.IsEnabled = !busy && !personaLocked;
+        StartPersonaButton.IsEnabled = !busy && !personaLocked && GameProcessCombo.SelectedItem is GameProcessCandidate;
+        StopPersonaButton.IsEnabled = !busy && personaLocked;
+
+        // Medición explícita: se permite con la Persona activa para observar competencia real.
+        ScanInterferenceButton.IsEnabled = !busy;
     }
 
     protected override void OnClosed(EventArgs e)
     {
-        gameBoost.Dispose();
+        personaTimer.Stop();
+        persona.Dispose();
         base.OnClosed(e);
     }
 }

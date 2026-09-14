@@ -163,7 +163,7 @@ public static class DiagnosticsEngine
         if (r.ActivePowerScheme.Contains(HighPerformanceGuid, StringComparison.OrdinalIgnoreCase))
         {
             var extra = r.HasBattery ? " En un portátil también puede elevar consumo y temperatura." : "";
-            f.Add(new("Info", "Plan Alto rendimiento detectado", "HyperBoost 0.2 no lo fuerza: en CPUs modernas Windows ya adapta el perfil de procesador durante Game Mode y un plan global puede no mejorar FPS." + extra));
+            f.Add(new("Info", "Plan Alto rendimiento detectado", "HyperBoost 0.3 no lo fuerza: en CPUs modernas Windows ya adapta el perfil de procesador durante Game Mode y un plan global puede no mejorar FPS." + extra));
         }
 
         if (r.GamingBackgroundTools.Count > 0)

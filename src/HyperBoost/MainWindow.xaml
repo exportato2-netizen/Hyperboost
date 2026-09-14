@@ -1,12 +1,12 @@
 <Window x:Class="HyperBoost.MainWindow"
  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
- Title="HyperBoost Beta" Width="1120" Height="760" MinWidth="900" MinHeight="640"
+ Title="HyperBoost Beta" Width="1180" Height="820" MinWidth="940" MinHeight="680"
  Background="{StaticResource Bg}" WindowStartupLocation="CenterScreen">
  <Grid Margin="22">
   <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
   <DockPanel>
-   <StackPanel><TextBlock Text="HYPERBOOST" FontSize="30" FontWeight="Bold" Foreground="{StaticResource Accent}"/><TextBlock Text="Beta 0.2 · FPS y frame pacing sin sacrificar calidad ni seguridad" Foreground="#94A3B8"/></StackPanel>
+   <StackPanel><TextBlock Text="HYPERBOOST" FontSize="30" FontWeight="Bold" Foreground="{StaticResource Accent}"/><TextBlock Text="Beta 0.3 · Gaming Persona adaptativa para Windows 11" Foreground="#94A3B8"/></StackPanel>
    <Border DockPanel.Dock="Right" Background="#15352F" CornerRadius="16" Padding="12,6" VerticalAlignment="Center"><TextBlock Text="GPU: SOLO LECTURA" Foreground="#72F2CA" FontWeight="Bold"/></Border>
   </DockPanel>
 
@@ -28,11 +28,11 @@
     </ListBox>
    </TabItem>
 
-   <TabItem Header="Boost por juego">
+   <TabItem Header="Gaming Persona">
     <ScrollViewer Background="#101620">
      <StackPanel Margin="20">
-      <TextBlock Text="BOOST DE SESIÓN POR PROCESO" FontSize="18" FontWeight="Bold" Foreground="{StaticResource Accent}"/>
-      <TextBlock Margin="0,7,0,14" TextWrapping="Wrap" Foreground="#B8C4D6" Text="Selecciona el juego ya abierto. HyperBoost pedirá a Windows HighQoS para ese proceso, evitando que la heurística de ahorro reduzca su velocidad de ejecución. No inyecta DLL, no modifica archivos del juego y no toca la GPU."/>
+      <TextBlock Text="GAMING PERSONA · BETA 0.3" FontSize="18" FontWeight="Bold" Foreground="{StaticResource Accent}"/>
+      <TextBlock Margin="0,7,0,14" TextWrapping="Wrap" Foreground="#B8C4D6" Text="Selecciona el juego ya abierto. La Persona se activa únicamente cuando ese PID está en primer plano; al hacer Alt+Tab restaura los cambios temporales y queda en espera. No desinstala, suspende ni mata procesos."/>
 
       <Grid>
        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
@@ -40,28 +40,37 @@
        <Button x:Name="RefreshProcessesButton" Grid.Column="1" Content="Actualizar procesos" Click="RefreshProcesses_Click"/>
       </Grid>
 
-      <CheckBox x:Name="BoostPriorityCheck" Margin="2,16,0,4" Content="Prioridad Above Normal (opcional; solo si el juego parte en prioridad Normal)"/>
-      <TextBlock Margin="24,0,0,7" TextWrapping="Wrap" Foreground="#94A3B8" Text="Puede ayudar en escenarios CPU-bound, pero se evita prioridad High/Realtime para no perjudicar audio, entrada ni procesos del sistema."/>
+      <TextBlock Margin="0,18,0,7" Text="CAPA ADAPTATIVA" FontWeight="Bold"/>
+      <CheckBox x:Name="PersonaEcoQosCheck" IsChecked="True" Margin="2,4" Content="EcoQoS solo para procesos secundarios de la lista segura"/>
+      <TextBlock Margin="24,0,0,7" TextWrapping="Wrap" Foreground="#94A3B8" Text="Por defecto se limita a sincronizadores y procesos de escritorio no críticos conocidos. Audio, Discord, OBS, overlays, anti-cheat y utilidades de periféricos quedan excluidos explícitamente."/>
 
-      <CheckBox x:Name="HonorTimersCheck" Margin="2,6,0,4" Content="Respetar solicitudes de resolución de temporizador del juego (opcional)"/>
-      <TextBlock Margin="24,0,0,12" TextWrapping="Wrap" Foreground="#94A3B8" Text="Puede mejorar frame pacing en algunos motores; aumenta actividad/consumo y no garantiza más FPS promedio."/>
+      <CheckBox x:Name="PersonaMemoryCheck" IsChecked="True" Margin="2,6,0,4" Content="Memory Priority adaptativa (5 → 4 únicamente bajo presión real de RAM)"/>
+      <TextBlock Margin="24,0,0,7" TextWrapping="Wrap" Foreground="#94A3B8" Text="Solo se activa si Windows reporta ≥75% de memoria física usada o menos de 6 GB disponibles. Se restaura a su valor exacto cuando desaparece la presión."/>
+
+      <CheckBox x:Name="IncludeOptionalBackgroundCheck" IsChecked="False" Margin="2,6,0,4" Content="Extender EcoQoS a navegadores y helpers de launchers (opcional)"/>
+      <TextBlock Margin="24,0,0,12" TextWrapping="Wrap" Foreground="#94A3B8" Text="Desactivado por defecto para evitar afectar reproducción multimedia o interfaces de launchers. Nunca incluye Discord, captura, audio ni anti-cheat."/>
+
+      <TextBlock Margin="0,8,0,7" Text="PROCESO DEL JUEGO" FontWeight="Bold"/>
+      <CheckBox x:Name="BoostPriorityCheck" Margin="2,4" Content="Prioridad Above Normal (opcional; solo si parte en Normal)"/>
+      <CheckBox x:Name="HonorTimersCheck" Margin="2,6,0,12" Content="Respetar solicitudes de resolución de temporizador mientras el juego tenga foco (opcional)"/>
 
       <StackPanel Orientation="Horizontal" Margin="0,4,0,12">
-       <Button x:Name="StartBoostButton" Content="Iniciar boost de sesión" Click="StartBoost_Click"/>
-       <Button x:Name="StopBoostButton" Content="Detener y restaurar" Click="StopBoost_Click" Background="#334155" Foreground="White"/>
+       <Button x:Name="StartPersonaButton" Content="Armar Gaming Persona" Click="StartPersona_Click"/>
+       <Button x:Name="StopPersonaButton" Content="Detener y restaurar" Click="StopPersona_Click" Background="#334155" Foreground="White"/>
       </StackPanel>
 
-      <Border Background="#192231" CornerRadius="8" Padding="12" Margin="0,0,0,14">
-       <TextBlock x:Name="BoostStatus" TextWrapping="Wrap" Text="Sin boost activo."/>
+      <Border Background="#192231" CornerRadius="8" Padding="12" Margin="0,0,0,18">
+       <TextBlock x:Name="PersonaStatus" TextWrapping="Wrap" Text="Gaming Persona detenida."/>
       </Border>
 
-      <Separator Margin="0,4,0,14"/>
-      <TextBlock Text="OTRA VÍA SEGURA: OPTIMIZACIONES PARA JUEGOS EN VENTANAS" FontWeight="Bold"/>
-      <TextBlock Margin="0,6,0,8" TextWrapping="Wrap" Foreground="#B8C4D6" Text="Windows 11 puede usar el modelo flip moderno para juegos DirectX 10/11 en ventana o sin bordes, reduciendo latencia sin bajar resolución ni calidad. HyperBoost abre la página oficial de Configuración para que lo controles tú."/>
-      <Button Content="Abrir Configuración de gráficos de Windows" HorizontalAlignment="Left" Click="OpenGraphics_Click"/>
+      <Separator Margin="0,2,0,16"/>
+      <TextBlock Text="ESCÁNER DE INTERFERENCIAS · SOLO LECTURA" FontSize="16" FontWeight="Bold" Foreground="{StaticResource Accent}"/>
+      <TextBlock Margin="0,6,0,10" TextWrapping="Wrap" Foreground="#B8C4D6" Text="Toma dos muestras y ordena procesos por CPU, I/O y memoria. Sirve para encontrar competencia real antes de agregar nuevos procesos a la política; el escaneo no modifica nada."/>
+      <Button x:Name="ScanInterferenceButton" Content="Medir interferencias ahora" HorizontalAlignment="Left" Click="ScanInterference_Click"/>
+      <TextBox x:Name="InterferenceText" Margin="0,10,0,4" MinHeight="180" IsReadOnly="True" TextWrapping="NoWrap" FontFamily="Consolas" FontSize="12" Padding="10" Background="#0B111A" Foreground="#DCE7F5" BorderThickness="0" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" Text="Aún no se ha realizado una medición."/>
 
-      <Border Background="#2A2115" CornerRadius="8" Padding="12" Margin="0,18,0,0">
-       <TextBlock TextWrapping="Wrap" Foreground="#F6D58B" Text="Seguridad: HyperBoost no desactiva Defender, Integridad de memoria/VBS, Secure Boot, firewall, mitigaciones, servicios críticos ni anti-cheat. Si Windows o el juego bloquean un ajuste de proceso, HyperBoost no intenta evadir esa protección."/>
+      <Border Background="#2A2115" CornerRadius="8" Padding="12" Margin="0,14,0,0">
+       <TextBlock TextWrapping="Wrap" Foreground="#F6D58B" Text="Seguridad: la Persona solo usa APIs públicas por proceso. No toca Defender, VBS/Integridad de memoria, Secure Boot, firewall, servicios críticos, BCD/HPET, core parking, afinidad, GPU, drivers ni archivos del juego. Si un proceso niega acceso, se omite."/>
       </Border>
      </StackPanel>
     </ScrollViewer>
@@ -69,7 +78,7 @@
 
    <TabItem Header="Qué modifica">
     <ScrollViewer Background="#101620">
-     <TextBlock Padding="20" TextWrapping="Wrap" FontSize="15" Text="PERFIL SEGURO&#10;Activa Game Mode y desactiva la captura de juegos en segundo plano. Antes de escribir, guarda una copia local; verifica cada escritura y revierte automáticamente si algo falla. Ya no fuerza el plan Alto rendimiento global.&#10;&#10;BOOST DE SESIÓN&#10;Solo sobre el proceso que eliges: usa APIs documentadas de Windows para controlar power throttling/QoS. De forma opcional puede usar prioridad Above Normal y respetar solicitudes de temporizador. Guarda el estado original exacto y lo restaura al detener el boost; al cerrar el juego, estos cambios de proceso desaparecen.&#10;&#10;NUNCA MODIFICA&#10;GPU, controlador, gráficos, resolución, perfiles NVIDIA/AMD, clocks, voltaje, potencia, ventiladores, DLSS, FSR, XeSS, Frame Generation, V-Sync, G-Sync, Reflex ni límites de FPS. Tampoco aplica BIOS, EXPO/XMP, Curve Optimizer, HPET/BCD, core parking, Defender, VBS, Integridad de memoria, Secure Boot o firewall."/>
+     <TextBlock Padding="20" TextWrapping="Wrap" FontSize="15" Text="PERFIL SEGURO PERSISTENTE&#10;Activa Game Mode y desactiva la captura de juegos en segundo plano. Guarda copia local, verifica escrituras y revierte automáticamente si algo falla. No fuerza planes de energía.&#10;&#10;GAMING PERSONA TEMPORAL&#10;Cuando el juego seleccionado está en primer plano, solicita HighQoS para ese proceso. En una lista conservadora de procesos secundarios puede solicitar EcoQoS. Bajo presión real de RAM puede bajar su Memory Priority de Normal (5) a Below Normal (4). Cada PID se identifica también por su tiempo de creación para no tocar un PID reutilizado. Alt+Tab o detener la Persona restaura el estado anterior.&#10;&#10;ESCÁNER DE INTERFERENCIAS&#10;Mide CPU, working set e I/O de procesos de la sesión actual y no modifica nada. Su objetivo es evitar agregar tweaks por intuición.&#10;&#10;NUNCA MODIFICA&#10;GPU, controlador, gráficos, resolución, perfiles NVIDIA/AMD, clocks, voltaje, potencia, ventiladores, DLSS, FSR, XeSS, Frame Generation, V-Sync, G-Sync, Reflex ni límites de FPS. Tampoco aplica BIOS, EXPO/XMP, Curve Optimizer, HPET/BCD, core parking, afinidad manual, Defender, VBS, Integridad de memoria, Secure Boot o firewall."/>
     </ScrollViewer>
    </TabItem>
   </TabControl>
