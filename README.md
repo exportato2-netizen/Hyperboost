@@ -2,23 +2,58 @@
 
 Beta abierta de un optimizador para Windows 11 enfocado en estabilidad, frame pacing y FPS sin reducir calidad gráfica ni debilitar la seguridad del equipo.
 
-## Beta 0.3.2 · Gaming Persona reversible y conflict-aware
+## Beta 0.4 · Event-driven Bottleneck Gate
 
-HyperBoost no intenta controlar funciones que Windows 11 o NVIDIA App administran mejor. El juego seleccionado sirve únicamente como referencia de foco; HyperBoost no cambia su prioridad, QoS, timers, gráficos ni driver.
+Beta 0.4 cambia la arquitectura: HyperBoost deja de consultar periódicamente qué ventana tiene foco y pasa a reaccionar a eventos nativos de Windows. Además, antes de aplicar EcoQoS mide CPU, GPU, RAM e I/O y puede decidir explícitamente **no hacer ningún cambio**.
 
-### HyperBoost sí hace
+> HyperBoost todavía no afirma una ganancia porcentual de FPS. La arquitectura 0.4 reduce intervenciones innecesarias y crea la base para medir A/B de forma controlada en una versión posterior.
 
-- EcoQoS temporal únicamente para una allowlist pequeña de procesos secundarios no críticos conocidos.
+### Motor por eventos
+
+- Usa `SetWinEventHook(EVENT_SYSTEM_FOREGROUND)` para recibir cambios de ventana foreground sin un timer periódico de 1,2 s.
+- Vigila la salida del juego mediante eventos del proceso, no mediante polling.
+- Usa `CreateMemoryResourceNotification` cuando Windows expone notificaciones de memoria baja/alta.
+- Una pérdida breve de foco usa únicamente un temporizador one-shot de 2 segundos para evitar restaurar/reaplicar por overlays o Alt+Tab corto.
+- Si el hook de foreground no está disponible, Gaming Persona no usa un fallback de polling: queda deshabilitada para esa sesión.
+
+### HyperBoost se pone a sí mismo en background
+
+Cuando el juego seleccionado obtiene foco, HyperBoost intenta aplicar `PROCESS_MODE_BACKGROUND_BEGIN` únicamente a **su propio proceso**. Al perder foco lo revierte inmediatamente con `PROCESS_MODE_BACKGROUND_END`.
+
+No cambia prioridad, QoS, timers ni scheduling del proceso del juego.
+
+### Bottleneck Gate
+
+Con el juego realmente en foreground, el Gate realiza una muestra corta antes de permitir EcoQoS:
+
+- CPU por proceso.
+- I/O por proceso.
+- RAM y presión de memoria.
+- GPU por proceso mediante contadores WDDM de Windows, en modo solo lectura.
+
+El porcentaje GPU mostrado usa el motor GPU más ocupado por proceso. Si Windows no expone esos contadores, el Gate continúa de forma segura con CPU/RAM/I/O.
+
+EcoQoS solo queda autorizado para **PID concretos** de la allowlist segura que hayan demostrado actividad CPU o I/O durante la muestra. No se autoriza una aplicación solo por consumir memoria.
+
+Ejemplos de decisión del Gate:
+
+- Juego cerca de saturación GPU y sin competencia segura: **no tocar CPU**.
+- Otro proceso usa GPU: **informar**, sin modificar procesos gráficos.
+- RAM bajo presión: permitir Memory Priority adaptativa únicamente sobre la allowlist segura.
+- Proceso seguro con CPU/I/O medible: permitir EcoQoS solo para ese PID.
+- Sin evidencia de cuello/interferencia: **no hacer cambios**.
+
+### Políticas temporales que siguen disponibles
+
+- EcoQoS temporal únicamente para una allowlist pequeña de procesos secundarios no críticos conocidos y solo si el Gate aprueba su PID.
 - Si un proceso ya controla explícitamente su propio `PROCESS_POWER_THROTTLING_EXECUTION_SPEED`, HyperBoost no lo pisa.
 - Al restaurar EcoQoS, solo revierte el bit que todavía reconoce como propio; cambios posteriores de Windows u otra aplicación se conservan.
-- Memory Priority adaptativa: solo bajo presión real de RAM (>=75% usada o <6 GB disponibles), y únicamente de 5 a 4 para la misma lista segura.
-- Memory Priority solo vuelve de 4 a 5 si el valor actual sigue siendo el aplicado por HyperBoost; si otra autoridad lo cambió, se respeta.
-- Tolerancia de 2 segundos ante pérdidas breves de foco para evitar ciclos de restauración/reaplicación por overlays o Alt+Tab corto.
-- Las restauraciones que fallen temporalmente no pierden su snapshot y pueden reintentarse.
-- Protección PID + tiempo de creación para evitar modificar procesos reutilizados.
-- Escáner de interferencias de solo lectura con CPU, working set e I/O por proceso usando tiempo monotónico real.
-- El escáner verifica también el tiempo de creación del proceso entre muestras.
-- El análisis de hardware tolera fallos WMI parciales: un sensor/clase inaccesible no invalida el resto del informe.
+- Memory Priority adaptativa: solo bajo presión real de RAM y únicamente de 5 a 4 para la misma lista segura.
+- Memory Priority solo vuelve de 4 a 5 si el valor actual sigue siendo el aplicado por HyperBoost.
+- Restauraciones que fallen temporalmente conservan su snapshot para reintento.
+- PID + tiempo de creación evita modificar procesos reutilizados.
+
+Navegadores, launchers, Discord, audio, OBS, overlays, anti-cheat, NVIDIA y utilidades de periféricos no se modifican automáticamente. Pueden aparecer en los diagnósticos solo para observación.
 
 ### HyperBoost deja a Windows 11
 
@@ -32,23 +67,21 @@ HyperBoost no intenta controlar funciones que Windows 11 o NVIDIA App administra
 ### HyperBoost deja a NVIDIA App/driver
 
 - Optimización gráfica del juego y perfiles 3D.
-- DLSS overrides y modelos de Frame Generation.
+- DLSS overrides y Frame Generation.
 - Smooth Motion.
-- Low Latency / Reflex y cola de render.
+- Low Latency / Reflex.
 - G-SYNC, resolución, frecuencia y opciones de pantalla.
 - Max Frame Rate y Background Application Max Frame Rate.
 - ShadowPlay, Instant Replay, Highlights y overlay.
 - Auto tuning de GPU, clocks y rendimiento.
 
-Navegadores, launchers, Discord, audio, OBS, overlays, anti-cheat, NVIDIA y utilidades de periféricos no se modifican automáticamente. Pueden aparecer en el escáner solo para diagnóstico.
-
 ## Compatibilidad con betas anteriores
 
-Beta 0.3.2 ya no escribe Game Mode, Game DVR ni planes de energía. Si existe un backup creado por Beta 0.1/0.2/0.3, la interfaz mantiene una opción de restauración. Antes de escribir, el backup se valida contra una allowlist de los cuatro valores de registro históricos y contra un GUID de energía válido. Un backup malformado se conserva intacto y no se aplica.
+Beta 0.4 no escribe Game Mode, Game DVR ni planes de energía. Si existe un backup creado por Beta 0.1/0.2/0.3, la interfaz mantiene la restauración legada validada en modo fail-closed.
 
 ## Verificación de ejecución
 
-El workflow oficial ahora hace Restore, Build, Publish y además un **runtime smoke launch**: inicia realmente `HyperBoost.exe` en Windows, comprueba que siga vivo y falla la build si aparece `crash.log`. Después genera checksum y ZIP.
+El workflow oficial hace Restore, Build, Publish y un **runtime smoke launch** que inicia realmente `HyperBoost.exe` en Windows, comprueba que siga vivo y falla si aparece `crash.log`. Después genera checksum y ZIP.
 
 ## Seguridad y límites deliberados
 

@@ -1,7 +1,6 @@
 using System.Text;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Threading;
 
 namespace HyperBoost;
 
@@ -10,16 +9,30 @@ public partial class MainWindow : Window
     readonly HardwareScanner scanner = new();
     readonly OptimizationService optimizer = new();
     readonly GamingPersonaService persona = new();
-    readonly DispatcherTimer personaTimer;
+    readonly BottleneckGateService gate = new();
+    readonly SystemEventCoordinator systemEvents = new();
+    readonly SelfBackgroundMode selfBackground = new();
+
+    CancellationTokenSource? gateCts;
+    CancellationTokenSource? focusLossCts;
+    bool gateRunning;
     bool busy;
 
     public MainWindow()
     {
         InitializeComponent();
-        personaTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(1200) };
-        personaTimer.Tick += PersonaTimer_Tick;
-        personaTimer.Start();
+        systemEvents.ForegroundProcessChanged += SystemEvents_ForegroundProcessChanged;
+        systemEvents.MemoryPressureChanged += SystemEvents_MemoryPressureChanged;
+        systemEvents.WatchedProcessExited += SystemEvents_WatchedProcessExited;
         RefreshProcesses();
+
+        if (!systemEvents.ForegroundHookAvailable)
+            StatusText.Text = "Windows no permitió registrar el evento de ventana foreground. Gaming Persona permanecerá deshabilitada para evitar polling continuo.";
+        else
+            StatusText.Text = systemEvents.MemoryNotificationsAvailable
+                ? "Motor por eventos listo. HyperBoost está inactivo hasta que armes una Gaming Persona."
+                : "Motor de foco listo; las notificaciones nativas de memoria no están disponibles y se usará la comprobación conservadora al aplicar políticas.";
+
         UpdateControls();
     }
 
@@ -99,18 +112,34 @@ public partial class MainWindow : Window
 
     void GameProcessCombo_SelectionChanged(object sender, SelectionChangedEventArgs e) => UpdateControls();
 
-    void StartPersona_Click(object sender, RoutedEventArgs e)
+    async void StartPersona_Click(object sender, RoutedEventArgs e)
     {
         if (GameProcessCombo.SelectedItem is not GameProcessCandidate game) return;
+        if (!systemEvents.ForegroundHookAvailable)
+        {
+            MessageBox.Show("Windows no permitió registrar EVENT_SYSTEM_FOREGROUND. HyperBoost no usará polling como reemplazo, por lo que Gaming Persona no se puede armar en esta sesión.", "Motor por eventos no disponible", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+
         try
         {
             PersonaStatus.Text = persona.Start(
                 game,
                 PersonaEcoQosCheck.IsChecked == true,
                 PersonaMemoryCheck.IsChecked == true);
+            systemEvents.WatchProcessExit(game.Id);
+            GateText.Text = "Esperando que el juego gane foco. El Gate no ha medido nada todavía.";
+            await HandleForegroundChangedAsync(SystemEventCoordinator.GetForegroundProcessId());
         }
         catch (Exception ex)
         {
+            CancelTransientWork();
+            selfBackground.SetActive(false);
+            systemEvents.StopWatchingProcess();
+            if (persona.IsEnabled || persona.HasPendingRestores)
+            {
+                try { persona.Stop(); } catch { }
+            }
             MessageBox.Show(ex.Message, "No se pudo armar Gaming Persona", MessageBoxButton.OK, MessageBoxImage.Warning);
             PersonaStatus.Text = "Gaming Persona no realizó cambios.";
         }
@@ -119,6 +148,9 @@ public partial class MainWindow : Window
 
     void StopPersona_Click(object sender, RoutedEventArgs e)
     {
+        CancelTransientWork();
+        selfBackground.SetActive(false);
+        systemEvents.StopWatchingProcess();
         try
         {
             PersonaStatus.Text = persona.Stop();
@@ -132,8 +164,8 @@ public partial class MainWindow : Window
 
     async void ScanInterference_Click(object sender, RoutedEventArgs e)
     {
-        var excludedPid = (GameProcessCombo.SelectedItem as GameProcessCandidate)?.Id ?? 0;
-        SetBusy(true, "Midiendo interferencias de procesos...");
+        var excludedPid = (GameProcessCombo.SelectedItem as GameProcessCandidate)?.Id ?? persona.TargetGamePid;
+        SetBusy(true, "Midiendo CPU, I/O y memoria de procesos...");
         try
         {
             var samples = await persona.ScanInterferenceAsync(excludedPid);
@@ -147,7 +179,7 @@ public partial class MainWindow : Window
             }
             if (samples.Count == 0) sb.AppendLine("No se detectó actividad relevante durante la ventana de medición.");
             InterferenceText.Text = sb.ToString();
-            StatusText.Text = "Medición completada. El escáner no modificó ningún proceso.";
+            StatusText.Text = "Medición CPU/I-O completada. El Bottleneck Gate GPU se ejecuta automáticamente con el juego en foco para evitar una muestra engañosa.";
         }
         catch (Exception ex)
         {
@@ -160,27 +192,128 @@ public partial class MainWindow : Window
         }
     }
 
-    static string TrimTo(string value, int max)
-        => value.Length <= max ? value : value[..Math.Max(1, max - 1)] + "…";
+    void SystemEvents_ForegroundProcessChanged(int pid)
+        => Dispatcher.BeginInvoke(async () => await HandleForegroundChangedAsync(pid));
 
-    void PersonaTimer_Tick(object? sender, EventArgs e)
+    void SystemEvents_MemoryPressureChanged(bool low)
+        => Dispatcher.BeginInvoke(() =>
+        {
+            persona.NotifyMemoryPressure(low);
+            PersonaStatus.Text = persona.Status;
+            UpdateControls();
+        });
+
+    void SystemEvents_WatchedProcessExited()
+        => Dispatcher.BeginInvoke(() =>
+        {
+            CancelTransientWork();
+            selfBackground.SetActive(false);
+            PersonaStatus.Text = persona.HandleGameExited();
+            systemEvents.StopWatchingProcess();
+            RefreshProcesses();
+        });
+
+    async Task HandleForegroundChangedAsync(int pid)
     {
-        var wasEnabled = persona.IsEnabled;
+        if (!persona.IsEnabled)
+        {
+            selfBackground.SetActive(false);
+            return;
+        }
+
+        if (pid == persona.TargetGamePid)
+        {
+            focusLossCts?.Cancel();
+            focusLossCts?.Dispose();
+            focusLossCts = null;
+
+            if (!selfBackground.SetActive(true))
+                StatusText.Text = "El juego tiene foco, pero Windows no permitió poner HyperBoost en PROCESS_MODE_BACKGROUND. El Gate continuará sin ese ajuste propio.";
+
+            if (!persona.IsEngaged && !gateRunning)
+                await RunBottleneckGateAsync();
+            return;
+        }
+
+        selfBackground.SetActive(false);
+        gateCts?.Cancel();
+        if (persona.IsEngaged)
+            ScheduleFocusLossRestore();
+    }
+
+    async Task RunBottleneckGateAsync()
+    {
+        if (!persona.IsEnabled || persona.TargetGamePid <= 0) return;
+        gateRunning = true;
+        gateCts?.Cancel();
+        gateCts?.Dispose();
+        gateCts = new CancellationTokenSource();
+        var token = gateCts.Token;
+        var targetPid = persona.TargetGamePid;
+        GateText.Text = "Bottleneck Gate midiendo ~1 s con el juego en foco. Todavía no se aplica EcoQoS.";
+        PersonaStatus.Text = "Juego en foco · HyperBoost se puso a sí mismo en background · Gate evaluando CPU/GPU/RAM/I-O.";
+        UpdateControls();
+
         try
         {
-            persona.Tick();
-            PersonaStatus.Text = persona.Status;
+            var result = await gate.EvaluateAsync(targetPid, persona, token);
+            GateText.Text = result.ToDisplayText();
+            if (!token.IsCancellationRequested && persona.IsEnabled && persona.TargetGamePid == targetPid && SystemEventCoordinator.GetForegroundProcessId() == targetPid)
+                PersonaStatus.Text = persona.EngageFromGate(result.EcoQosPids);
+        }
+        catch (OperationCanceledException)
+        {
+            GateText.Text = "Gate cancelado porque el juego perdió foco o la Persona se detuvo. No se aplicó una decisión incompleta.";
         }
         catch (Exception ex)
         {
-            PersonaStatus.Text = "Gaming Persona encontró un error y no forzó el cambio: " + ex.Message;
+            GateText.Text = "Gate falló de forma segura: " + ex.Message;
+            PersonaStatus.Text = "No se aplicó EcoQoS porque el Gate no pudo completar la medición.";
         }
-
-        if (wasEnabled && !persona.IsEnabled)
-            RefreshProcesses();
-        else
+        finally
+        {
+            gateRunning = false;
             UpdateControls();
+        }
     }
+
+    void ScheduleFocusLossRestore()
+    {
+        focusLossCts?.Cancel();
+        focusLossCts?.Dispose();
+        focusLossCts = new CancellationTokenSource();
+        var token = focusLossCts.Token;
+        PersonaStatus.Text = "Pérdida de foco detectada; se esperan 2 s antes de restaurar para ignorar overlays/Alt+Tab breve.";
+        _ = RestoreAfterGraceAsync(token);
+    }
+
+    async Task RestoreAfterGraceAsync(CancellationToken token)
+    {
+        try
+        {
+            await Task.Delay(TimeSpan.FromSeconds(2), token);
+            if (!token.IsCancellationRequested && persona.IsEnabled && SystemEventCoordinator.GetForegroundProcessId() != persona.TargetGamePid)
+                PersonaStatus.Text = persona.PauseAndRestore();
+        }
+        catch (OperationCanceledException) { }
+        finally
+        {
+            UpdateControls();
+        }
+    }
+
+    void CancelTransientWork()
+    {
+        gateCts?.Cancel();
+        gateCts?.Dispose();
+        gateCts = null;
+        focusLossCts?.Cancel();
+        focusLossCts?.Dispose();
+        focusLossCts = null;
+    }
+
+    static string TrimTo(string value, int max)
+        => value.Length <= max ? value : value[..Math.Max(1, max - 1)] + "…";
 
     void SetBusy(bool value, string? text = null)
     {
@@ -196,20 +329,22 @@ public partial class MainWindow : Window
         var pendingRestore = persona.HasPendingRestores;
         var personaLocked = personaActive || pendingRestore;
 
-        ScanButton.IsEnabled = !busy && !personaActive;
-        RestoreButton.IsEnabled = !busy && optimizer.HasBackup && !personaActive;
-        RefreshProcessesButton.IsEnabled = !busy && !personaLocked;
-        GameProcessCombo.IsEnabled = !busy && !personaLocked;
-        PersonaEcoQosCheck.IsEnabled = !busy && !personaLocked;
-        PersonaMemoryCheck.IsEnabled = !busy && !personaLocked;
-        StartPersonaButton.IsEnabled = !busy && !personaLocked && GameProcessCombo.SelectedItem is GameProcessCandidate;
+        ScanButton.IsEnabled = !busy && !personaActive && !gateRunning;
+        RestoreButton.IsEnabled = !busy && optimizer.HasBackup && !personaActive && !gateRunning;
+        RefreshProcessesButton.IsEnabled = !busy && !personaLocked && !gateRunning;
+        GameProcessCombo.IsEnabled = !busy && !personaLocked && !gateRunning;
+        PersonaEcoQosCheck.IsEnabled = !busy && !personaLocked && !gateRunning;
+        PersonaMemoryCheck.IsEnabled = !busy && !personaLocked && !gateRunning;
+        StartPersonaButton.IsEnabled = !busy && !personaLocked && !gateRunning && systemEvents.ForegroundHookAvailable && GameProcessCombo.SelectedItem is GameProcessCandidate;
         StopPersonaButton.IsEnabled = !busy && (personaActive || pendingRestore);
-        ScanInterferenceButton.IsEnabled = !busy;
+        ScanInterferenceButton.IsEnabled = !busy && !gateRunning;
     }
 
     protected override void OnClosed(EventArgs e)
     {
-        personaTimer.Stop();
+        CancelTransientWork();
+        selfBackground.Dispose();
+        systemEvents.Dispose();
         persona.Dispose();
         base.OnClosed(e);
     }
