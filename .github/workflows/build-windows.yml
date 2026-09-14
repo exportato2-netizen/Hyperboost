@@ -42,15 +42,16 @@ jobs:
         run: |
           $exe = (Resolve-Path 'publish\PresentMon-2.5.1-x64.exe').Path
           $output = & $exe --help 2>&1 | Out-String
-          if ($LASTEXITCODE -ne 0) {
-            Write-Host $output
-            throw "PresentMon --help exited with code $LASTEXITCODE"
+          # PresentMon 2.5.1 intentionally returns 1 for --help; validate the actual
+          # option surface instead of treating that documented CLI behavior as a crash.
+          $required = @('process_id','output_file','hotkey','timed','terminate_after_timed','exclude_dropped','no_track_input','session_name')
+          foreach ($option in $required) {
+            if ($output -notmatch [regex]::Escape($option)) {
+              Write-Host $output
+              throw "PresentMon CLI help is missing required option: $option"
+            }
           }
-          if ($output -notmatch 'process_id' -or $output -notmatch 'hotkey' -or $output -notmatch 'timed') {
-            Write-Host $output
-            throw 'PresentMon CLI help does not expose the capture options required by HyperBoost.'
-          }
-          Write-Host 'PresentMon CLI smoke test OK.'
+          Write-Host "PresentMon CLI smoke test OK (help exit code $LASTEXITCODE)."
       - name: Benchmark parser self-test
         shell: pwsh
         run: |
