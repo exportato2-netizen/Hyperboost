@@ -12,12 +12,10 @@ public partial class MainWindow : Window
     readonly GamingPersonaService persona = new();
     readonly DispatcherTimer personaTimer;
     bool busy;
-    bool scanCompleted;
 
     public MainWindow()
     {
         InitializeComponent();
-        // Seguimiento ligero del foco. El barrido de procesos secundarios se hace internamente cada 5 s.
         personaTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(1200) };
         personaTimer.Tick += PersonaTimer_Tick;
         personaTimer.Start();
@@ -54,8 +52,7 @@ public partial class MainWindow : Window
 
             HardwareText.Text = sb.ToString();
             Findings.ItemsSource = DiagnosticsEngine.Analyze(r);
-            scanCompleted = true;
-            StatusText.Text = "Análisis completado. Revisa las recomendaciones antes de aplicar.";
+            StatusText.Text = "Análisis completado. HyperBoost no cambiará opciones que ya pertenecen a Windows o NVIDIA App.";
         }
         catch (Exception ex)
         {
@@ -68,31 +65,9 @@ public partial class MainWindow : Window
         }
     }
 
-    async void Apply_Click(object sender, RoutedEventArgs e)
-    {
-        if (MessageBox.Show(
-            "Se guardará el estado actual y se aplicarán solo ajustes Windows de bajo riesgo: Game Mode y captura en segundo plano. No se cambiará el plan de energía. ¿Continuar?",
-            "HyperBoost", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
-
-        SetBusy(true, "Guardando y aplicando...");
-        try
-        {
-            StatusText.Text = await optimizer.ApplySafeAsync();
-            MessageBox.Show(StatusText.Text, "HyperBoost");
-        }
-        catch (Exception ex)
-        {
-            MessageBox.Show(ex.Message, "No se pudo aplicar", MessageBoxButton.OK, MessageBoxImage.Error);
-        }
-        finally
-        {
-            SetBusy(false);
-        }
-    }
-
     async void Restore_Click(object sender, RoutedEventArgs e)
     {
-        SetBusy(true, "Restaurando...");
+        SetBusy(true, "Restaurando configuración de una beta anterior...");
         try
         {
             StatusText.Text = await optimizer.RestoreAsync();
@@ -131,11 +106,8 @@ public partial class MainWindow : Window
         {
             PersonaStatus.Text = persona.Start(
                 game,
-                BoostPriorityCheck.IsChecked == true,
-                HonorTimersCheck.IsChecked == true,
                 PersonaEcoQosCheck.IsChecked == true,
-                PersonaMemoryCheck.IsChecked == true,
-                IncludeOptionalBackgroundCheck.IsChecked == true);
+                PersonaMemoryCheck.IsChecked == true);
         }
         catch (Exception ex)
         {
@@ -221,24 +193,14 @@ public partial class MainWindow : Window
     void UpdateControls()
     {
         var personaLocked = persona.IsEnabled;
-
-        // Los barridos WMI y las escrituras persistentes se bloquean mientras la Persona está armada
-        // para que HyperBoost no genere trabajo innecesario durante el juego.
         ScanButton.IsEnabled = !busy && !personaLocked;
-        ApplyButton.IsEnabled = !busy && scanCompleted && !personaLocked;
         RestoreButton.IsEnabled = !busy && optimizer.HasBackup && !personaLocked;
-
         RefreshProcessesButton.IsEnabled = !busy && !personaLocked;
         GameProcessCombo.IsEnabled = !busy && !personaLocked;
         PersonaEcoQosCheck.IsEnabled = !busy && !personaLocked;
         PersonaMemoryCheck.IsEnabled = !busy && !personaLocked;
-        IncludeOptionalBackgroundCheck.IsEnabled = !busy && !personaLocked;
-        BoostPriorityCheck.IsEnabled = !busy && !personaLocked;
-        HonorTimersCheck.IsEnabled = !busy && !personaLocked;
         StartPersonaButton.IsEnabled = !busy && !personaLocked && GameProcessCombo.SelectedItem is GameProcessCandidate;
         StopPersonaButton.IsEnabled = !busy && personaLocked;
-
-        // Medición explícita: se permite con la Persona activa para observar competencia real.
         ScanInterferenceButton.IsEnabled = !busy;
     }
 
