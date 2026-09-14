@@ -1,5 +1,6 @@
 using Microsoft.Win32;
 using System.Diagnostics;
+using System.IO;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 
