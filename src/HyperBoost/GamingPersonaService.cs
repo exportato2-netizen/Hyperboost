@@ -49,6 +49,7 @@ public sealed class GamingPersonaService : IDisposable
 
     readonly Dictionary<int, BackgroundSnapshot> adjustedBackground = [];
     readonly Dictionary<int, CpuObservation> cpuObservations = [];
+    readonly HashSet<int> gateAllowedEcoPids = [];
 
     int gamePid;
     ulong gameCreationTime;
@@ -56,7 +57,6 @@ public sealed class GamingPersonaService : IDisposable
     bool engaged;
     bool requestedEcoQos;
     bool requestedMemoryPriority;
-    bool gateAllowsEcoQos;
     bool? lowMemorySignal;
     string status = "Gaming Persona detenida.";
 
@@ -109,20 +109,23 @@ public sealed class GamingPersonaService : IDisposable
         gameCreationTime = creationTime;
         requestedEcoQos = ecoQos;
         requestedMemoryPriority = memoryPriority;
-        gateAllowsEcoQos = false;
+        gateAllowedEcoPids.Clear();
         enabled = true;
         engaged = false;
         status = $"Gaming Persona armada para {game.Name} · PID {game.Id}. Esperando que Windows informe foco del juego; todavía no se aplicó ningún cambio.";
         return status;
     }
 
-    public string EngageFromGate(bool allowEcoQos)
+    public string EngageFromGate(IReadOnlyCollection<int> allowedEcoPids)
     {
         if (!enabled) return status;
         if (!IsSameProcess(gamePid, gameCreationTime))
             return HandleGameExited();
 
-        gateAllowsEcoQos = allowEcoQos;
+        gateAllowedEcoPids.Clear();
+        foreach (var pid in allowedEcoPids.Where(x => x > 0))
+            gateAllowedEcoPids.Add(pid);
+
         engaged = true;
         ReconcileBackground();
         UpdateActiveStatus();
@@ -133,7 +136,7 @@ public sealed class GamingPersonaService : IDisposable
     {
         if (!engaged) return status;
         var restore = Disengage();
-        gateAllowsEcoQos = false;
+        gateAllowedEcoPids.Clear();
         status = restore.Errors == 0
             ? "Juego fuera de foco: Gaming Persona quedó armada pero inactiva y restauró el background."
             : $"Juego fuera de foco: quedaron {restore.Errors} restauraciones pendientes para reintento.";
@@ -146,7 +149,7 @@ public sealed class GamingPersonaService : IDisposable
         enabled = false;
         gamePid = 0;
         gameCreationTime = 0;
-        gateAllowsEcoQos = false;
+        gateAllowedEcoPids.Clear();
         status = restore.Errors == 0
             ? "El juego terminó. Gaming Persona restauró los procesos secundarios y se desarmó."
             : $"El juego terminó. Quedaron {restore.Errors} restauraciones pendientes; HyperBoost conserva sus snapshots para reintento.";
@@ -170,7 +173,7 @@ public sealed class GamingPersonaService : IDisposable
         enabled = false;
         gamePid = 0;
         gameCreationTime = 0;
-        gateAllowsEcoQos = false;
+        gateAllowedEcoPids.Clear();
         status = restore.Errors == 0
             ? "Gaming Persona detenida. Los ajustes temporales de background fueron restaurados."
             : $"Gaming Persona detenida. Quedan {restore.Errors} restauraciones pendientes; puedes pulsar Detener y restaurar nuevamente.";
@@ -213,7 +216,8 @@ public sealed class GamingPersonaService : IDisposable
                         snapshot = null;
                     }
 
-                    var activeEnough = IsProcessActive(process);
+                    var gateSelected = gateAllowedEcoPids.Contains(process.Id);
+                    var activeEnough = gateSelected || IsProcessActive(process);
                     if (!activeEnough && snapshot is null) continue;
 
                     if (snapshot is null)
@@ -283,7 +287,7 @@ public sealed class GamingPersonaService : IDisposable
             var snapshot = new BackgroundSnapshot(pid, name, creation, power, memory.MemoryPriority, havePower, haveMemory);
 
             var appOwnsExecutionQos = havePower && (power.ControlMask & PowerThrottlingExecutionSpeed) != 0;
-            if (requestedEcoQos && gateAllowsEcoQos && havePower && !appOwnsExecutionQos)
+            if (requestedEcoQos && gateAllowedEcoPids.Contains(pid) && havePower && !appOwnsExecutionQos)
             {
                 var eco = power;
                 eco.Version = 1;
@@ -310,7 +314,7 @@ public sealed class GamingPersonaService : IDisposable
 
     void ReconcilePowerPolicy(BackgroundSnapshot snapshot)
     {
-        if (!snapshot.PowerAvailable || snapshot.PowerChanged || !requestedEcoQos || !gateAllowsEcoQos) return;
+        if (!snapshot.PowerAvailable || snapshot.PowerChanged || !requestedEcoQos || !gateAllowedEcoPids.Contains(snapshot.Pid)) return;
         if (!IsSameProcess(snapshot.Pid, snapshot.CreationTime)) return;
 
         var handle = OpenProcess(ProcessQueryLimitedInformation | ProcessSetInformation, false, snapshot.Pid);
@@ -463,7 +467,7 @@ public sealed class GamingPersonaService : IDisposable
     void UpdateActiveStatus()
     {
         var pressure = ReadMemoryPressure();
-        status = $"Gaming Persona ACTIVA · Gate EcoQoS: {(gateAllowsEcoQos ? "permitido" : "no necesario")} · background EcoQoS: {AdjustedBackgroundCount} · memoria 5→4: {MemoryAdjustedCount} · RAM usada: {pressure.MemoryLoad}% ({pressure.AvailableGb:0.0} GB libres).";
+        status = $"Gaming Persona ACTIVA · Gate aprobó {gateAllowedEcoPids.Count} PID(s) para EcoQoS · background EcoQoS aplicado: {AdjustedBackgroundCount} · memoria 5→4: {MemoryAdjustedCount} · RAM usada: {pressure.MemoryLoad}% ({pressure.AvailableGb:0.0} GB libres).";
     }
 
     public async Task<IReadOnlyList<InterferenceSample>> ScanInterferenceAsync(int excludedGamePid, CancellationToken cancellationToken = default)
