@@ -69,6 +69,22 @@ jobs:
             throw 'Benchmark self-test did not create its success marker.'
           }
           Get-Content $ok
+      - name: Game Intelligence self-test
+        shell: pwsh
+        run: |
+          $ok = Join-Path $env:TEMP 'HyperBoost-game-intelligence-selftest.ok'
+          $fail = Join-Path $env:TEMP 'HyperBoost-game-intelligence-selftest.fail'
+          Remove-Item $ok,$fail -Force -ErrorAction SilentlyContinue
+          $exe = (Resolve-Path 'publish\HyperBoost.exe').Path
+          $p = Start-Process -FilePath $exe -ArgumentList '--game-intelligence-self-test' -Wait -PassThru
+          if ($p.ExitCode -ne 0) {
+            if (Test-Path $fail) { Get-Content $fail }
+            throw "Game Intelligence self-test exited with code $($p.ExitCode)."
+          }
+          if (-not (Test-Path $ok)) {
+            throw 'Game Intelligence self-test did not create its success marker.'
+          }
+          Get-Content $ok
       - name: Runtime smoke launch
         shell: pwsh
         run: |
@@ -100,9 +116,53 @@ jobs:
             "$hyper  HyperBoost.exe"
             "$present  PresentMon-2.5.1-x64.exe"
           ) | Set-Content -Encoding ascii publish/SHA256SUMS.txt
-          Compress-Archive -Path publish/HyperBoost.exe,publish/PresentMon-2.5.1-x64.exe,publish/PRESENTMON-LICENSE.txt,publish/SHA256SUMS.txt -DestinationPath HyperBoost-Beta-0.6.1-win-x64.zip -Force
+          Compress-Archive -Path publish/HyperBoost.exe,publish/PresentMon-2.5.1-x64.exe,publish/PRESENTMON-LICENSE.txt,publish/SHA256SUMS.txt -DestinationPath HyperBoost-Beta-0.7-win-x64.zip -Force
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: HyperBoost-Beta-0.6.1-win-x64
-          path: HyperBoost-Beta-0.6.1-win-x64.zip
+          name: HyperBoost-Beta-0.7-win-x64
+          path: HyperBoost-Beta-0.7-win-x64.zip
+          if-no-files-found: error
+      - name: Prepare verified transport parts
+        shell: pwsh
+        run: |
+          $source = 'HyperBoost-Beta-0.7-win-x64.zip'
+          New-Item -ItemType Directory -Path transport -Force | Out-Null
+          $input = [System.IO.File]::OpenRead($source)
+          try {
+            $buffer = New-Object byte[] (24MB)
+            $part = 1
+            while (($read = $input.Read($buffer, 0, $buffer.Length)) -gt 0) {
+              $path = 'transport/HyperBoost-Beta-0.7-win-x64.part{0:d2}' -f $part
+              $output = [System.IO.File]::Create($path)
+              try { $output.Write($buffer, 0, $read) } finally { $output.Dispose() }
+              $part++
+            }
+          } finally {
+            $input.Dispose()
+          }
+          $sha = (Get-FileHash $source -Algorithm SHA256).Hash.ToLowerInvariant()
+          @(
+            "sha256=$sha"
+            "size=$((Get-Item $source).Length)"
+            "parts=$($part - 1)"
+          ) | Set-Content -Encoding ascii transport/manifest.txt
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: HyperBoost-Beta-0.7-transport-part-01
+          path: transport/HyperBoost-Beta-0.7-win-x64.part01
+          if-no-files-found: error
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: HyperBoost-Beta-0.7-transport-part-02
+          path: transport/HyperBoost-Beta-0.7-win-x64.part02
+          if-no-files-found: error
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: HyperBoost-Beta-0.7-transport-part-03
+          path: transport/HyperBoost-Beta-0.7-win-x64.part03
+          if-no-files-found: error
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: HyperBoost-Beta-0.7-transport-manifest
+          path: transport/manifest.txt
           if-no-files-found: error

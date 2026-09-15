@@ -6,7 +6,68 @@ HyperBoost es una beta abierta para Windows 11 centrada en estabilidad, frame pa
 
 Si una intervención no puede demostrar beneficio, HyperBoost no afirma que lo haya. **No hacer cambios es un resultado correcto.**
 
-## Beta 0.6.1 · Benchmark Integrity
+## Beta 0.7 · Game Intelligence
+
+Beta 0.7 cierra el ciclo `Aprende` sobre la metodología endurecida de 0.6.1, sin añadir políticas de optimización:
+
+- Game Hub crea perfiles locales por ejecutable/juego;
+- Evidence Library conserva sesiones, capturas, huellas, políticas y resultados completos;
+- solo agrega sesiones compatibles y separa cualquier cambio de contexto;
+- clasifica evidencia como `SIN DATOS`, `PRELIMINAR`, `EVIDENCIA BAJA`, `EVIDENCIA MODERADA`, `EVIDENCIA ALTA`, `RESULTADOS CONTRADICTORIOS` o `CONTEXTO CAMBIÓ`;
+- genera recomendaciones para el esquema **exacto** medido: EcoQoS, Memory Priority experimental o la combinación; una combinación nunca se atribuye a una política individual;
+- Gaming Readiness usa `LISTO`, `ATENCIÓN` o `INTERFERENCIA DETECTADA`, sin score arbitrario;
+- reutiliza el Bottleneck Gate para una lectura puntual de CPU, GPU read-only, RAM, background, captura y sincronizadores; no añade polling permanente;
+- conserva las métricas de stalls/spikes como metadata, pero **no** implementa Stutter Attribution estable en 0.7.
+
+Todo permanece local en `%LOCALAPPDATA%\HyperBoost`. No se descargan perfiles universales de Internet y no se usa machine learning opaco.
+
+Los resultados nuevos usan `schemaVersion: 4` para añadir una etiqueta opcional de ajustes/versión del juego. La biblioteca usa `schemaVersion: 1`, escritura atómica y backup de la versión anterior. Los JSON anteriores se importan sin borrarlos: schema 3 se conserva con la limitación de contexto que corresponda; esquemas más antiguos sin huella suficiente quedan como histórico no agregable.
+
+## Evidence Library Methodology
+
+### Compatibilidad histórica
+
+La referencia es la sesión completa más reciente del mismo juego y esquema de políticas. Para sumar una sesión deben coincidir:
+
+- versión de HyperBoost y build de Windows;
+- CPU, GPU, driver y RAM total (tolerancia de 0,5 GB para lectura WMI);
+- ruta, tamaño y timestamp del ejecutable;
+- PresentMon y su hash;
+- fuente de frametime;
+- tipo de benchmark y duración por pasada;
+- resolución declarada;
+- esquema exacto de políticas ON;
+- etiqueta de ajustes/versión del juego, cuando se declaró.
+
+Una diferencia conocida produce `CONTEXTO CAMBIÓ`; la sesión se conserva pero no suma. Metadata crítica ausente produce `metadata insuficiente`. Si ambas sesiones omiten únicamente la etiqueta de ajustes, pueden orientar dentro de la misma huella técnica, pero la evidencia se limita a `EVIDENCIA BAJA`. Si solo una declara resolución o ajustes, no se mezclan.
+
+### Regla de niveles
+
+Una sesión es elegible para evidencia persistente normal cuando tiene al menos 6 pares, intervalos pareados estables y no está marcada preliminar, ruidosa o inválida.
+
+| Nivel | Regla implementada |
+|---|---|
+| SIN DATOS | No existen sesiones para esa política exacta |
+| PRELIMINAR | Existen datos, pero ninguna sesión elegible; incluye todos los resultados de 3 pares |
+| EVIDENCIA BAJA | Al menos 1 sesión elegible |
+| EVIDENCIA MODERADA | Al menos 2 sesiones elegibles, 12 pares compatibles, al menos 1 escenario integrado/ruta repetible, consistencia direccional ≥ 2/3 y contexto conocido exacto |
+| EVIDENCIA ALTA | Al menos 4 sesiones elegibles, 24 pares compatibles, al menos 3 escenarios integrados/ruta repetible, consistencia ≥ 75%, cero sesiones ruidosas y contexto conocido exacto |
+| RESULTADOS CONTRADICTORIOS | Hay al menos una mejora medible y una regresión medible compatibles |
+| CONTEXTO CAMBIÓ | La huella actual no tiene sesiones agregables, aunque existe histórico |
+
+La consistencia usa cuatro clases legibles: mejora medible, regresión medible, señal positiva y beneficio no demostrado. El nivel expresa calidad/repetición de evidencia; el resultado expresa dirección. Por eso `SIN BENEFICIO DEMOSTRABLE` puede tener varias sesiones sin convertirse en la afirmación “el efecto es cero”.
+
+### Gaming Readiness
+
+Readiness es una foto puntual y reutiliza la misma muestra del Gate:
+
+- `INTERFERENCIA DETECTADA`: RAM ≥ 85% o menos de 3 GB libres, CPU secundaria agregada ≥ 5%/un proceso ≥ 3%, u otro proceso ≥ 15% en su motor GPU más ocupado;
+- `ATENCIÓN`: RAM ≥ 75% o menos de 6 GB, actividad CPU/GPU secundaria menor pero visible, I/O ≥ 5 MB/s, herramienta de captura/sincronizador observado o GPU WDDM indeterminada;
+- `LISTO`: ninguna de esas señales apareció en la ventana.
+
+La GPU permanece en solo lectura. Un hallazgo dice “observado” o “coincidió con”; no atribuye causalidad de stutter. EcoQoS puede reducir competencia de ejecución CPU, pero no limita directamente I/O ni red.
+
+## Beta 0.6.1 · Benchmark Integrity (base estadística)
 
 Beta 0.6.1 endurece el benchmark A/B de Beta 0.6 sin añadir políticas de optimización nuevas.
 
@@ -22,7 +83,7 @@ Beta 0.6.1 endurece el benchmark A/B de Beta 0.6 sin añadir políticas de optim
 - Recovery Journal write-ahead, idempotente y ownership-aware para las políticas temporales.
 - Memory Priority aparece como `EXPERIMENTAL · beneficio aún no demostrado`.
 
-Los resultados usan `schemaVersion: 3`. Los CSV y JSON de betas anteriores no se modifican ni eliminan.
+Los resultados de 0.6.1 usaban `schemaVersion: 3`. Los CSV y JSON de betas anteriores no se modifican ni eliminan.
 
 ## Benchmark Methodology
 
@@ -159,10 +220,10 @@ El workflow oficial ejecuta:
 2. Publish self-contained `win-x64`;
 3. descarga PresentMon 2.5.1 oficial y verifica SHA-256;
 4. valida su CLI;
-5. ejecuta los self-tests sintéticos de Benchmark Integrity y Recovery Journal;
+5. ejecuta los self-tests sintéticos de Benchmark Integrity, Recovery Journal y Game Intelligence;
 6. realiza un runtime smoke launch;
-7. genera `SHA256SUMS.txt` y `HyperBoost-Beta-0.6.1-win-x64.zip`;
-8. publica el artifact `HyperBoost-Beta-0.6.1-win-x64`.
+7. genera `SHA256SUMS.txt` y `HyperBoost-Beta-0.7-win-x64.zip`;
+8. publica el artifact `HyperBoost-Beta-0.7-win-x64` y partes de transporte verificables para evitar truncamientos en clientes móviles.
 
 ## Compilar
 

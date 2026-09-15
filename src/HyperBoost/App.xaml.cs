@@ -26,6 +26,22 @@ public partial class App : Application
             return;
         }
 
+        if (e.Args.Any(x => string.Equals(x, "--game-intelligence-self-test", StringComparison.OrdinalIgnoreCase)))
+        {
+            try
+            {
+                var message = GameIntelligenceSelfTests.Run();
+                File.WriteAllText(Path.Combine(Path.GetTempPath(), "HyperBoost-game-intelligence-selftest.ok"), message);
+                Shutdown(0);
+            }
+            catch (Exception ex)
+            {
+                try { File.WriteAllText(Path.Combine(Path.GetTempPath(), "HyperBoost-game-intelligence-selftest.fail"), ex.ToString()); } catch { }
+                Shutdown(3);
+            }
+            return;
+        }
+
         base.OnStartup(e);
     }
 
