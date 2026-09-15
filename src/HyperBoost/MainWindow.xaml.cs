@@ -39,6 +39,9 @@ public partial class MainWindow : Window
                 ? "Motor por eventos listo. HyperBoost está inactivo hasta que armes una Gaming Persona o una sesión A/B."
                 : "Motor de foco listo; las notificaciones nativas de memoria no están disponibles y se usará la comprobación conservadora al aplicar políticas.";
 
+        if (!string.Equals(persona.StartupRecoveryStatus, "Recovery Journal limpio.", StringComparison.Ordinal))
+            StatusText.Text += Environment.NewLine + persona.StartupRecoveryStatus;
+
         try
         {
             var hash = benchmarkService.ValidatePresentMon();
@@ -236,17 +239,19 @@ public partial class MainWindow : Window
         try
         {
             benchmarkService.ValidatePresentMon();
-            var pairs = SelectedTagInt(BenchmarkPairsCombo, 3);
+            var pairs = SelectedTagInt(BenchmarkPairsCombo, 6);
             var seconds = SelectedTagInt(BenchmarkDurationCombo, 30);
             var useEcoQos = PersonaEcoQosCheck.IsChecked == true;
             var useMemoryPriority = PersonaMemoryCheck.IsChecked == true;
-            benchmarkSession = new AbBenchmarkSession(game, pairs, seconds, useEcoQos, useMemoryPriority);
+            var scenario = SelectedScenario();
+            var resolution = BenchmarkResolutionText.Text;
+            benchmarkSession = new AbBenchmarkSession(game, pairs, seconds, useEcoQos, useMemoryPriority, scenario, resolution);
             benchmarkPendingPlan = null;
             benchmarkPassArmed = false;
             benchmarkCaptureRunning = false;
             systemEvents.WatchProcessExit(game.Id);
-            BenchmarkStatusText.Text = $"Sesión creada para {game.Name} · {pairs} pares · {seconds}s por pasada · ON: EcoQoS={(useEcoQos ? "sí" : "no")}, Memory Priority={(useMemoryPriority ? "sí" : "no")}. Estas opciones quedan congeladas para toda la sesión.";
-            BenchmarkResultsText.Text = "Aún no hay capturas. El resultado se calcula por pares y se compara con el ruido de las pasadas OFF.";
+            BenchmarkStatusText.Text = $"Sesión creada para {game.Name} · {AbBenchmarkSession.EvidenceLabel(pairs)} · {seconds}s · {scenario.DisplayName()} · ON: EcoQoS={(useEcoQos ? "sí" : "no")}, Memory Priority EXPERIMENTAL={(useMemoryPriority ? "sí" : "no")}.";
+            BenchmarkResultsText.Text = "Aún no hay capturas. La primera pasada fija la fuente de frametime; las siguientes deben usar exactamente la misma.";
             UpdateBenchmarkPlanText();
         }
         catch (Exception ex)
@@ -433,6 +438,7 @@ public partial class MainWindow : Window
 
                 BenchmarkStatusText.Text = $"{plan.Label}: Bottleneck Gate midiendo interferencias antes de la captura. Todavía no pulses la hotkey.";
                 var gateResult = await gate.EvaluateAsync(session.Game.Id, persona, token);
+                session.RecordGateOverhead(gateResult.EvaluationDurationMs, gateResult.Gpu.DurationMs);
                 GateText.Text = gateResult.ToDisplayText();
                 if (SystemEventCoordinator.GetForegroundProcessId() != session.Game.Id)
                     throw new OperationCanceledException("El juego perdió foco durante el Gate.", token);
@@ -454,6 +460,7 @@ public partial class MainWindow : Window
                 session.Game.Id,
                 session.CaptureSeconds,
                 session.RootDirectory,
+                session.SessionFrameTimeSource,
                 () => Dispatcher.BeginInvoke(() => BenchmarkStatusText.Text = $"{plan.Label}: LISTA. Mantén el juego en foco y pulsa {PresentMonBenchmarkService.CaptureHotkey}. Después de la hotkey se grabarán {session.CaptureSeconds}s automáticamente."),
                 token);
 
@@ -518,7 +525,9 @@ public partial class MainWindow : Window
         var done = benchmarkSession.Results.Select(x => x.Sequence).ToHashSet();
         var next = benchmarkSession.Next?.Sequence;
         var sb = new StringBuilder();
-        sb.AppendLine($"ON congelado: EcoQoS={(benchmarkSession.UseEcoQos ? "sí" : "no")} · Memory Priority={(benchmarkSession.UseMemoryPriority ? "sí" : "no")}");
+        sb.AppendLine($"ON congelado: EcoQoS={(benchmarkSession.UseEcoQos ? "sí" : "no")} · Memory Priority EXPERIMENTAL={(benchmarkSession.UseMemoryPriority ? "sí" : "no")}");
+        sb.AppendLine($"Evidencia: {AbBenchmarkSession.EvidenceLabel(benchmarkSession.Pairs)} · tipo {benchmarkSession.ScenarioType.DisplayName()}");
+        sb.AppendLine($"Fuente: {benchmarkSession.SessionFrameTimeSource ?? "se fijará en la primera pasada válida"}");
         foreach (var item in benchmarkSession.Plan)
         {
             var marker = done.Contains(item.Sequence) ? "✓" : item.Sequence == next ? "→" : "·";
@@ -546,7 +555,7 @@ public partial class MainWindow : Window
             var sb = new StringBuilder();
             sb.AppendLine("PASADAS VÁLIDAS");
             foreach (var x in benchmarkSession.Results.OrderBy(x => x.Sequence))
-                sb.AppendLine($"#{x.Sequence:00} P{x.Pair} {x.Mode,-3} · {x.AverageFps:0.00} FPS · 1% {x.Low1Fps:0.00} · 0.1% {x.Low01Fps:0.00} · p99 {x.P99FrameTimeMs:0.00} ms · stutter {x.StutterRatePercent:0.000}%");
+                sb.AppendLine($"#{x.Sequence:00} P{x.Pair} {x.Mode,-3} · {x.AverageFps:0.00} FPS · 1% {x.Low1Fps:0.00} (derivado) · 0.1% {x.Low01Fps:0.00}{(x.P999Indicative ? " indicativo" : "")} · p99 {x.P99FrameTimeMs:0.00} ms · severe {x.SevereStallCount} · relative {x.RelativeSpikeCount}");
             sb.AppendLine().AppendLine("Falta completar al menos un par OFF/ON para calcular diferencias.");
             BenchmarkResultsText.Text = sb.ToString();
         }
@@ -629,6 +638,14 @@ public partial class MainWindow : Window
         return fallback;
     }
 
+    BenchmarkScenarioType SelectedScenario()
+    {
+        if (BenchmarkScenarioCombo.SelectedItem is ComboBoxItem item &&
+            Enum.TryParse<BenchmarkScenarioType>(item.Tag?.ToString(), out var value))
+            return value;
+        return BenchmarkScenarioType.ManualScene;
+    }
+
     static string TrimTo(string value, int max)
         => value.Length <= max ? value : value[..Math.Max(1, max - 1)] + "…";
 
@@ -662,6 +679,8 @@ public partial class MainWindow : Window
         BenchmarkGameProcessCombo.IsEnabled = !busy && !personaLocked && !benchmarkInProgress;
         BenchmarkPairsCombo.IsEnabled = !busy && !personaLocked && !benchmarkInProgress;
         BenchmarkDurationCombo.IsEnabled = !busy && !personaLocked && !benchmarkInProgress;
+        BenchmarkScenarioCombo.IsEnabled = !busy && !personaLocked && !benchmarkInProgress;
+        BenchmarkResolutionText.IsEnabled = !busy && !personaLocked && !benchmarkInProgress;
         BenchmarkCreateButton.IsEnabled = !busy && !personaLocked && !gateRunning && !benchmarkCaptureRunning && systemEvents.ForegroundHookAvailable && BenchmarkGameProcessCombo.SelectedItem is GameProcessCandidate && (benchmarkSession is null || benchmarkSession.IsComplete);
         BenchmarkNextButton.IsEnabled = !busy && benchmarkSession is { IsComplete: false } && !benchmarkPassArmed && !benchmarkCaptureRunning && !gateRunning;
         BenchmarkCancelButton.IsEnabled = !busy && benchmarkExists;

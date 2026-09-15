@@ -50,6 +50,7 @@ public sealed class GamingPersonaService : IDisposable
     readonly Dictionary<int, BackgroundSnapshot> adjustedBackground = [];
     readonly Dictionary<int, CpuObservation> cpuObservations = [];
     readonly HashSet<int> gateAllowedEcoPids = [];
+    readonly RecoveryJournal recoveryJournal = new();
 
     int gamePid;
     ulong gameCreationTime;
@@ -67,6 +68,12 @@ public sealed class GamingPersonaService : IDisposable
     public int AdjustedBackgroundCount => adjustedBackground.Values.Count(x => x.PowerChanged);
     public int MemoryAdjustedCount => adjustedBackground.Values.Count(x => x.MemoryChanged);
     public string Status => status;
+    public string StartupRecoveryStatus { get; }
+
+    public GamingPersonaService()
+    {
+        StartupRecoveryStatus = RecoverPendingJournal();
+    }
 
     public IReadOnlyList<GameProcessCandidate> GetCandidates()
     {
@@ -211,6 +218,8 @@ public sealed class GamingPersonaService : IDisposable
                     adjustedBackground.TryGetValue(process.Id, out var snapshot);
                     if (snapshot is not null && !IsSameProcess(snapshot.Pid, snapshot.CreationTime))
                     {
+                        recoveryJournal.TryRemove(snapshot.Pid, snapshot.CreationTime, RecoveryProperty.ExecutionQos);
+                        recoveryJournal.TryRemove(snapshot.Pid, snapshot.CreationTime, RecoveryProperty.MemoryPriority);
                         adjustedBackground.Remove(process.Id);
                         cpuObservations.Remove(process.Id);
                         snapshot = null;
@@ -244,6 +253,11 @@ public sealed class GamingPersonaService : IDisposable
             var snapshot = adjustedBackground[pid];
             if (!IsSameProcess(snapshot.Pid, snapshot.CreationTime) || RestoreBackgroundProcess(snapshot))
             {
+                if (!IsSameProcess(snapshot.Pid, snapshot.CreationTime))
+                {
+                    recoveryJournal.TryRemove(snapshot.Pid, snapshot.CreationTime, RecoveryProperty.ExecutionQos);
+                    recoveryJournal.TryRemove(snapshot.Pid, snapshot.CreationTime, RecoveryProperty.MemoryPriority);
+                }
                 adjustedBackground.Remove(pid);
                 cpuObservations.Remove(pid);
             }
@@ -293,15 +307,13 @@ public sealed class GamingPersonaService : IDisposable
                 eco.Version = 1;
                 eco.ControlMask |= PowerThrottlingExecutionSpeed;
                 eco.StateMask |= PowerThrottlingExecutionSpeed;
-                if (SetProcessInformationPower(handle, ProcessPowerThrottling, ref eco, powerSize))
-                    snapshot.PowerChanged = true;
+                snapshot.PowerChanged = TryApplyPowerWithJournal(snapshot, eco, handle, powerSize);
             }
 
             if (requestedMemoryPriority && pressure.ShouldLowerBackgroundMemory && haveMemory && memory.MemoryPriority == MemoryPriorityNormal)
             {
                 var lower = new MemoryPriorityInformation { MemoryPriority = MemoryPriorityBelowNormal };
-                if (SetProcessInformationMemory(handle, ProcessMemoryPriority, ref lower, memorySize))
-                    snapshot.MemoryChanged = true;
+                snapshot.MemoryChanged = TryApplyMemoryWithJournal(snapshot, lower.MemoryPriority, handle, memorySize);
             }
 
             return snapshot.PowerChanged || snapshot.MemoryChanged ? snapshot : null;
@@ -326,9 +338,10 @@ public sealed class GamingPersonaService : IDisposable
             if (!GetProcessInformationPower(handle, ProcessPowerThrottling, ref current, size)) return;
             if ((current.ControlMask & PowerThrottlingExecutionSpeed) != 0) return;
 
+            snapshot.OriginalPower = current;
             current.ControlMask |= PowerThrottlingExecutionSpeed;
             current.StateMask |= PowerThrottlingExecutionSpeed;
-            if (SetProcessInformationPower(handle, ProcessPowerThrottling, ref current, size)) snapshot.PowerChanged = true;
+            snapshot.PowerChanged = TryApplyPowerWithJournal(snapshot, current, handle, size);
         }
         finally
         {
@@ -353,19 +366,25 @@ public sealed class GamingPersonaService : IDisposable
             if (pressure.ShouldLowerBackgroundMemory && !snapshot.MemoryChanged)
             {
                 if (current.MemoryPriority != MemoryPriorityNormal) return;
+                snapshot.OriginalMemoryPriority = current.MemoryPriority;
                 var lower = new MemoryPriorityInformation { MemoryPriority = MemoryPriorityBelowNormal };
-                if (SetProcessInformationMemory(handle, ProcessMemoryPriority, ref lower, size)) snapshot.MemoryChanged = true;
+                snapshot.MemoryChanged = TryApplyMemoryWithJournal(snapshot, lower.MemoryPriority, handle, size);
             }
             else if (!pressure.ShouldLowerBackgroundMemory && snapshot.MemoryChanged)
             {
-                if (current.MemoryPriority != MemoryPriorityBelowNormal)
+                if (current.MemoryPriority != snapshot.ExpectedMemoryPriority)
                 {
                     snapshot.MemoryChanged = false;
+                    recoveryJournal.TryRemove(snapshot.Pid, snapshot.CreationTime, RecoveryProperty.MemoryPriority);
                     return;
                 }
 
                 var original = new MemoryPriorityInformation { MemoryPriority = snapshot.OriginalMemoryPriority };
-                if (SetProcessInformationMemory(handle, ProcessMemoryPriority, ref original, size)) snapshot.MemoryChanged = false;
+                if (SetProcessInformationMemory(handle, ProcessMemoryPriority, ref original, size))
+                {
+                    snapshot.MemoryChanged = false;
+                    recoveryJournal.TryRemove(snapshot.Pid, snapshot.CreationTime, RecoveryProperty.MemoryPriority);
+                }
             }
         }
         finally
@@ -374,12 +393,56 @@ public sealed class GamingPersonaService : IDisposable
         }
     }
 
+    bool TryApplyPowerWithJournal(BackgroundSnapshot snapshot, ProcessPowerThrottlingState expected, IntPtr handle, uint size)
+    {
+        var entry = new RecoveryJournalEntry(
+            snapshot.Pid, snapshot.CreationTime, snapshot.Name, RecoveryProperty.ExecutionQos,
+            snapshot.OriginalPower.ControlMask, snapshot.OriginalPower.StateMask,
+            expected.ControlMask, expected.StateMask,
+            0, 0, DateTime.UtcNow);
+        // Write-ahead: una mutación nunca se realiza sin recovery persistente.
+        if (!recoveryJournal.TryUpsert(entry)) return false;
+        if (!SetProcessInformationPower(handle, ProcessPowerThrottling, ref expected, size))
+        {
+            recoveryJournal.TryRemove(entry);
+            return false;
+        }
+
+        snapshot.ExpectedPowerControlMask = expected.ControlMask;
+        snapshot.ExpectedPowerStateMask = expected.StateMask;
+        return true;
+    }
+
+    bool TryApplyMemoryWithJournal(BackgroundSnapshot snapshot, uint expectedPriority, IntPtr handle, uint size)
+    {
+        var entry = new RecoveryJournalEntry(
+            snapshot.Pid, snapshot.CreationTime, snapshot.Name, RecoveryProperty.MemoryPriority,
+            0, 0, 0, 0,
+            snapshot.OriginalMemoryPriority, expectedPriority, DateTime.UtcNow);
+        if (!recoveryJournal.TryUpsert(entry)) return false;
+        var expected = new MemoryPriorityInformation { MemoryPriority = expectedPriority };
+        if (!SetProcessInformationMemory(handle, ProcessMemoryPriority, ref expected, size))
+        {
+            recoveryJournal.TryRemove(entry);
+            return false;
+        }
+
+        snapshot.ExpectedMemoryPriority = expectedPriority;
+        return true;
+    }
+
     int RestoreBackground()
     {
         var errors = 0;
         foreach (var (pid, snapshot) in adjustedBackground.ToList())
         {
-            if (!IsSameProcess(snapshot.Pid, snapshot.CreationTime) || RestoreBackgroundProcess(snapshot))
+            if (!IsSameProcess(snapshot.Pid, snapshot.CreationTime))
+            {
+                recoveryJournal.TryRemove(snapshot.Pid, snapshot.CreationTime, RecoveryProperty.ExecutionQos);
+                recoveryJournal.TryRemove(snapshot.Pid, snapshot.CreationTime, RecoveryProperty.MemoryPriority);
+                adjustedBackground.Remove(pid);
+            }
+            else if (RestoreBackgroundProcess(snapshot))
                 adjustedBackground.Remove(pid);
             else
                 errors++;
@@ -389,7 +452,12 @@ public sealed class GamingPersonaService : IDisposable
 
     bool RestoreBackgroundProcess(BackgroundSnapshot snapshot)
     {
-        if (!IsSameProcess(snapshot.Pid, snapshot.CreationTime)) return true;
+        if (!IsSameProcess(snapshot.Pid, snapshot.CreationTime))
+        {
+            recoveryJournal.TryRemove(snapshot.Pid, snapshot.CreationTime, RecoveryProperty.ExecutionQos);
+            recoveryJournal.TryRemove(snapshot.Pid, snapshot.CreationTime, RecoveryProperty.MemoryPriority);
+            return true;
+        }
         var handle = OpenProcess(ProcessQueryLimitedInformation | ProcessSetInformation, false, snapshot.Pid);
         if (handle == IntPtr.Zero) return false;
 
@@ -406,28 +474,22 @@ public sealed class GamingPersonaService : IDisposable
                 }
                 else
                 {
-                    var stillOurs = (current.ControlMask & PowerThrottlingExecutionSpeed) != 0 &&
-                                    (current.StateMask & PowerThrottlingExecutionSpeed) != 0;
+                    var stillOurs = current.ControlMask == snapshot.ExpectedPowerControlMask &&
+                                    current.StateMask == snapshot.ExpectedPowerStateMask;
                     if (!stillOurs)
                     {
                         snapshot.PowerChanged = false;
+                        recoveryJournal.TryRemove(snapshot.Pid, snapshot.CreationTime, RecoveryProperty.ExecutionQos);
                     }
                     else
                     {
                         var original = snapshot.OriginalPower;
-                        if ((original.ControlMask & PowerThrottlingExecutionSpeed) != 0)
-                            current.ControlMask |= PowerThrottlingExecutionSpeed;
-                        else
-                            current.ControlMask &= ~PowerThrottlingExecutionSpeed;
-
-                        if ((original.StateMask & PowerThrottlingExecutionSpeed) != 0)
-                            current.StateMask |= PowerThrottlingExecutionSpeed;
-                        else
-                            current.StateMask &= ~PowerThrottlingExecutionSpeed;
-
-                        current.Version = 1;
-                        if (SetProcessInformationPower(handle, ProcessPowerThrottling, ref current, size))
+                        original.Version = 1;
+                        if (SetProcessInformationPower(handle, ProcessPowerThrottling, ref original, size))
+                        {
                             snapshot.PowerChanged = false;
+                            recoveryJournal.TryRemove(snapshot.Pid, snapshot.CreationTime, RecoveryProperty.ExecutionQos);
+                        }
                         else
                             ok = false;
                     }
@@ -442,15 +504,19 @@ public sealed class GamingPersonaService : IDisposable
                 {
                     ok = false;
                 }
-                else if (current.MemoryPriority != MemoryPriorityBelowNormal)
+                else if (current.MemoryPriority != snapshot.ExpectedMemoryPriority)
                 {
                     snapshot.MemoryChanged = false;
+                    recoveryJournal.TryRemove(snapshot.Pid, snapshot.CreationTime, RecoveryProperty.MemoryPriority);
                 }
                 else
                 {
                     var original = new MemoryPriorityInformation { MemoryPriority = snapshot.OriginalMemoryPriority };
                     if (SetProcessInformationMemory(handle, ProcessMemoryPriority, ref original, size))
+                    {
                         snapshot.MemoryChanged = false;
+                        recoveryJournal.TryRemove(snapshot.Pid, snapshot.CreationTime, RecoveryProperty.MemoryPriority);
+                    }
                     else
                         ok = false;
                 }
@@ -493,7 +559,7 @@ public sealed class GamingPersonaService : IDisposable
 
             var eligible = SafeAutomaticBackground.Contains(b.Name);
             var recommendation = eligible
-                ? "Candidato seguro; el Bottleneck Gate decide si EcoQoS aporta algo en esta muestra."
+                ? "Candidato seguro; el Gate solo puede reducir competencia de ejecución CPU con EcoQoS. El I/O de disco/red se observa, no se limita."
                 : NeverAutomatic.Contains(b.Name)
                     ? "Solo observar: Windows/NVIDIA, multimedia, launcher, overlay, periférico o anti-cheat mantienen autoridad."
                     : "Solo diagnóstico; HyperBoost no lo modifica automáticamente.";
@@ -588,6 +654,110 @@ public sealed class GamingPersonaService : IDisposable
         return creation.Value;
     }
 
+    string RecoverPendingJournal()
+    {
+        IReadOnlyList<RecoveryJournalEntry> entries;
+        try { entries = recoveryJournal.ReadEntries(); }
+        catch (Exception ex) { return "Recovery Journal no se pudo leer; no se aplicó ninguna restauración automática: " + ex.Message; }
+        if (entries.Count == 0) return "Recovery Journal limpio.";
+
+        var restored = 0;
+        var discarded = 0;
+        var pending = 0;
+        foreach (var entry in entries)
+        {
+            if (!TryReadProcessIdentity(entry.Pid, out var creation, out var name))
+            {
+                if (!ProcessExists(entry.Pid))
+                {
+                    recoveryJournal.TryRemove(entry);
+                    discarded++;
+                }
+                else pending++;
+                continue;
+            }
+
+            if (!RecoveryJournal.IdentityMatches(entry, entry.Pid, creation, name))
+            {
+                // PID reutilizado o ejecutable distinto: jamás tocar el proceso nuevo.
+                recoveryJournal.TryRemove(entry);
+                discarded++;
+                continue;
+            }
+
+            var handle = OpenProcess(ProcessQueryLimitedInformation | ProcessSetInformation, false, entry.Pid);
+            if (handle == IntPtr.Zero) { pending++; continue; }
+            try
+            {
+                if (entry.Property == RecoveryProperty.ExecutionQos)
+                {
+                    var size = (uint)Marshal.SizeOf<ProcessPowerThrottlingState>();
+                    var current = new ProcessPowerThrottlingState { Version = 1 };
+                    if (!GetProcessInformationPower(handle, ProcessPowerThrottling, ref current, size)) { pending++; continue; }
+                    if (!RecoveryJournal.StillOwnedPower(entry, current.ControlMask, current.StateMask))
+                    {
+                        recoveryJournal.TryRemove(entry);
+                        discarded++;
+                        continue;
+                    }
+                    var original = new ProcessPowerThrottlingState
+                    {
+                        Version = 1,
+                        ControlMask = entry.OriginalControlMask,
+                        StateMask = entry.OriginalStateMask
+                    };
+                    if (SetProcessInformationPower(handle, ProcessPowerThrottling, ref original, size))
+                    {
+                        recoveryJournal.TryRemove(entry);
+                        restored++;
+                    }
+                    else pending++;
+                }
+                else
+                {
+                    var size = (uint)Marshal.SizeOf<MemoryPriorityInformation>();
+                    var current = new MemoryPriorityInformation();
+                    if (!GetProcessInformationMemory(handle, ProcessMemoryPriority, ref current, size)) { pending++; continue; }
+                    if (!RecoveryJournal.StillOwnedMemory(entry, current.MemoryPriority))
+                    {
+                        recoveryJournal.TryRemove(entry);
+                        discarded++;
+                        continue;
+                    }
+                    var original = new MemoryPriorityInformation { MemoryPriority = entry.OriginalMemoryPriority };
+                    if (SetProcessInformationMemory(handle, ProcessMemoryPriority, ref original, size))
+                    {
+                        recoveryJournal.TryRemove(entry);
+                        restored++;
+                    }
+                    else pending++;
+                }
+            }
+            finally { CloseHandle(handle); }
+        }
+
+        return $"Recovery Journal: {restored} restauración(es), {discarded} entrada(s) descartada(s) sin sobrescribir cambios ajenos, {pending} pendiente(s).";
+    }
+
+    static bool TryReadProcessIdentity(int pid, out ulong creation, out string name)
+    {
+        creation = 0;
+        name = "";
+        try
+        {
+            using var process = Process.GetProcessById(pid);
+            name = process.ProcessName;
+            return TryReadCreationTime(pid, out creation);
+        }
+        catch { return false; }
+    }
+
+    static bool ProcessExists(int pid)
+    {
+        try { using var process = Process.GetProcessById(pid); return !process.HasExited; }
+        catch { return false; }
+    }
+
     public void Dispose()
     {
         try { Stop(); }
@@ -606,8 +776,11 @@ public sealed class GamingPersonaService : IDisposable
         public int Pid { get; } = pid;
         public string Name { get; } = name;
         public ulong CreationTime { get; } = creationTime;
-        public ProcessPowerThrottlingState OriginalPower { get; } = originalPower;
-        public uint OriginalMemoryPriority { get; } = originalMemoryPriority;
+        public ProcessPowerThrottlingState OriginalPower { get; set; } = originalPower;
+        public uint OriginalMemoryPriority { get; set; } = originalMemoryPriority;
+        public uint ExpectedPowerControlMask { get; set; }
+        public uint ExpectedPowerStateMask { get; set; }
+        public uint ExpectedMemoryPriority { get; set; }
         public bool PowerAvailable { get; } = powerAvailable;
         public bool MemoryAvailable { get; } = memoryAvailable;
         public bool PowerChanged { get; set; }
