@@ -18,7 +18,8 @@ public static class GameEvidenceAnalyzer
 
         var a = reference.Environment;
         var b = candidate.Environment;
-        if (!Same(a.HyperBoostVersion, b.HyperBoostVersion)) return Changed("La versión de HyperBoost cambió.");
+        if (BenchmarkMethodFamily(reference) != BenchmarkMethodFamily(candidate))
+            return Changed("La familia de metodología del benchmark cambió.");
         if (!Same(a.WindowsBuild, b.WindowsBuild)) return Changed("La build de Windows cambió.");
         if (!Same(a.Cpu, b.Cpu)) return Changed("La CPU detectada cambió.");
         if (!Same(a.Gpu, b.Gpu)) return Changed("La GPU detectada cambió.");
@@ -227,6 +228,8 @@ public static class GameEvidenceAnalyzer
     }
 
     static CompatibilityDecision Changed(string message) => new(HistoricalCompatibility.ContextChanged, message);
+    static int BenchmarkMethodFamily(GameEvidenceSession session)
+        => session.SourceResultsSchemaVersion is 3 or 4 ? 1 : session.SourceResultsSchemaVersion;
     static bool Same(string a, string b) => string.Equals(a.Trim(), b.Trim(), StringComparison.OrdinalIgnoreCase);
     static bool SamePath(string a, string b)
     {

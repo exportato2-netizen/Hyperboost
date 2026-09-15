@@ -31,6 +31,10 @@ internal static class GameIntelligenceSelfTests
             "cambio de ajustes fue agregado");
         Assert(GameEvidenceAnalyzer.Compare(baseline, Session("b", "MEJORA MEDIBLE", 6, policy: new(true, true))).Kind == HistoricalCompatibility.ContextChanged,
             "esquemas de políticas diferentes fueron atribuidos juntos");
+        var beta061 = Session("old-schema", "MEJORA MEDIBLE", 6, settings: null, sourceSchema: 3, appVersion: "0.6.1.0");
+        var beta07Unknown = Session("new-schema", "MEJORA MEDIBLE", 6, settings: null);
+        Assert(GameEvidenceAnalyzer.Compare(beta07Unknown, beta061).Kind == HistoricalCompatibility.CompatibleWithUnknownSettings,
+            "schema 3 compatible con la misma metodología no se conservó como evidencia limitada");
     }
 
     static void TestPolicyIsolationAndEvidenceLevels()
@@ -169,13 +173,15 @@ internal static class GameIntelligenceSelfTests
         string? settings = "Ultra · cap 144 · patch 1.0",
         PolicyScheme? policy = null,
         double avg = 5,
-        double p99 = 7)
+        double p99 = 7,
+        int sourceSchema = 4,
+        string appVersion = "0.7.0.0")
     {
         var created = new DateTime(2026, 1, 1, 12, 0, 0, DateTimeKind.Utc).AddMinutes(id.GetHashCode(StringComparison.Ordinal) & 255);
         var environment = new BenchmarkEnvironmentFingerprint(
-            4,
+            sourceSchema,
             id,
-            "0.7.0.0",
+            appVersion,
             "Windows 11 10.0.26100",
             "Synthetic CPU",
             "Synthetic GPU",
@@ -203,9 +209,9 @@ internal static class GameIntelligenceSelfTests
             SessionId = id,
             CreatedAtUtc = created,
             LastObservedRunUtc = created,
-            SourceResultsSchemaVersion = 4,
+            SourceResultsSchemaVersion = sourceSchema,
             SourceResultsPath = $@"C:\Synthetic\{id}\HyperBoost-AB-results.json",
-            HyperBoostVersion = "0.7.0.0",
+            HyperBoostVersion = appVersion,
             GameName = "SyntheticGame",
             ExecutablePath = environment.ExecutablePath,
             Policies = policy ?? new(true, false),

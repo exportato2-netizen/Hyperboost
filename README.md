@@ -29,7 +29,7 @@ Los resultados nuevos usan `schemaVersion: 4` para añadir una etiqueta opcional
 
 La referencia es la sesión completa más reciente del mismo juego y esquema de políticas. Para sumar una sesión deben coincidir:
 
-- versión de HyperBoost y build de Windows;
+- familia compatible de metodología A/B y build de Windows (la versión completa de HyperBoost siempre se registra);
 - CPU, GPU, driver y RAM total (tolerancia de 0,5 GB para lectura WMI);
 - ruta, tamaño y timestamp del ejecutable;
 - PresentMon y su hash;
