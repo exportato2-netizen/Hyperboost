@@ -75,6 +75,7 @@ public static class BenchmarkAnalyzer
         var p99Positive = DecisivePositive(p99Delta, p99Threshold, pairP99, needed, p99Ci);
         var avgNegative = DecisiveNegative(avgDelta, avgThreshold, pairAvg, needed, avgCi);
         var p99Negative = DecisiveNegative(p99Delta, p99Threshold, pairP99, needed, p99Ci);
+        var contradictory = (avgPositive && p99Negative) || (p99Positive && avgNegative);
         var noisy = noiseAvg > 5 || noiseP99 > 12 ||
                     StdDev(pairAvg) > 8 || StdDev(pairP99) > 15;
 
@@ -90,6 +91,8 @@ public static class BenchmarkAnalyzer
             evidence = pairs.Count >= 9 ? "EXTENDIDA · 9 pares" : "ESTÁNDAR · 6 pares";
             if (noisy)
                 verdict = "SESIÓN DEMASIADO RUIDOSA · la variabilidad impide separar de forma defendible la intervención del contenido de la prueba.";
+            else if (contradictory)
+                verdict = "SIN MEJORA DEMOSTRABLE · las métricas primarias entregaron señales medibles pero contradictorias; no se resume como mejora ni como regresión global.";
             else if (avgNegative || p99Negative)
                 verdict = "REGRESIÓN MEDIBLE · al menos una métrica primaria empeoró con intervalo pareado fuera de cero y magnitud práctica.";
             else if ((avgPositive || p99Positive) && !avgNegative && !p99Negative)
@@ -215,7 +218,7 @@ public static class BenchmarkAnalyzer
           .AppendLine($"Extreme stalls totales (≥200 ms): {extremeStalls}")
           .AppendLine("OVERHEAD OBSERVADO DURANTE CAPTURA")
           .AppendLine($"HyperBoost CPU promedio: {captures.Average(x => x.HyperBoostCpuPercent):0.000}% · Working Set: {captures.Average(x => x.HyperBoostWorkingSetMb):0.0} MB · I/O por pasada: {captures.Average(x => x.HyperBoostIoMb):0.000} MB")
-          .AppendLine($"PresentMon CPU promedio: {captures.Average(x => x.PresentMonCpuPercent):0.000}% · Working Set: {captures.Average(x => x.PresentMonWorkingSetMb):0.0} MB")
+          .AppendLine($"PresentMon CPU promedio: {captures.Average(x => x.PresentMonCpuPercent):0.000}% · Working Set: {captures.Average(x => x.PresentMonWorkingSetMb):0.0} MB · I/O por pasada: {captures.Average(x => x.PresentMonIoMb):0.000} MB")
           .AppendLine()
           .AppendLine("Metodología: AB/BA contrabalanceado. La inferencia usa deltas por par completo y bootstrap de pares; nunca trata frames consecutivos como observaciones IID. Magnitud mínima práctica, consistencia de signo, intervalo y variabilidad deben concordar. Tres pares siempre producen resultado preliminar.")
           .AppendLine("Los CSV originales se conservan. 'Sin mejora demostrable' no significa 'efecto inexistente'.");

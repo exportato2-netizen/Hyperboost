@@ -68,7 +68,8 @@ public sealed record BenchmarkCaptureResult(
     double HyperBoostWorkingSetMb,
     double HyperBoostIoMb,
     double PresentMonCpuPercent,
-    double PresentMonWorkingSetMb)
+    double PresentMonWorkingSetMb,
+    double PresentMonIoMb)
 {
     // Compatibilidad de lectura/UI con sesiones Beta 0.5/0.6.
     public int StutterCount => SevereStallCount;
@@ -231,7 +232,8 @@ public sealed class AbBenchmarkSession
                 captureHyperBoostWorkingSetAverageMb = results.Count == 0 ? (double?)null : results.Average(x => x.HyperBoostWorkingSetMb),
                 captureHyperBoostIoAverageMb = results.Count == 0 ? (double?)null : results.Average(x => x.HyperBoostIoMb),
                 presentMonCpuAveragePercent = results.Count == 0 ? (double?)null : results.Average(x => x.PresentMonCpuPercent),
-                presentMonWorkingSetAverageMb = results.Count == 0 ? (double?)null : results.Average(x => x.PresentMonWorkingSetMb)
+                presentMonWorkingSetAverageMb = results.Count == 0 ? (double?)null : results.Average(x => x.PresentMonWorkingSetMb),
+                presentMonIoAverageMb = results.Count == 0 ? (double?)null : results.Average(x => x.PresentMonIoMb)
             },
             plan,
             createdAt = DateTime.Now,
@@ -256,6 +258,7 @@ public sealed class AbBenchmarkSession
           .AppendLine($"Plan: {Pairs} pares ({EvidenceLabel(Pairs)}) · {CaptureSeconds}s por pasada · AB/BA contrabalanceado")
           .AppendLine($"Fuente de frametime bloqueada: {SessionFrameTimeSource ?? "se decide en la primera pasada válida"}")
           .AppendLine($"Políticas ON congeladas: EcoQoS={(UseEcoQos ? "sí" : "no")} · Memory Priority EXPERIMENTAL={(UseMemoryPriority ? "sí" : "no")}")
+          .AppendLine($"Overhead Gate observado: {(GateDurationMs.Count == 0 ? "sin muestra" : $"{GateDurationMs.Average():0.0} ms promedio")} · scanner GPU WMI: {(GpuScannerDurationMs.Count == 0 ? "sin muestra" : $"{GpuScannerDurationMs.Average():0.0} ms promedio")}")
           .AppendLine(new string('-', 72));
         return sb.ToString();
     }
@@ -380,7 +383,8 @@ public sealed class PresentMonBenchmarkService
                 HyperBoostWorkingSetMb = Math.Max(hyperReady.WorkingSetBytes, hyperEnd.WorkingSetBytes) / 1_048_576d,
                 HyperBoostIoMb = ProcessOverheadSnapshot.IoMb(hyperStart, hyperEnd),
                 PresentMonCpuPercent = ProcessOverheadSnapshot.CpuPercent(presentStart, presentEnd),
-                PresentMonWorkingSetMb = Math.Max(presentReady.WorkingSetBytes, presentEnd.WorkingSetBytes) / 1_048_576d
+                PresentMonWorkingSetMb = Math.Max(presentReady.WorkingSetBytes, presentEnd.WorkingSetBytes) / 1_048_576d,
+                PresentMonIoMb = ProcessOverheadSnapshot.IoMb(presentStart, presentEnd)
             };
             var sidecar = Path.ChangeExtension(csvPath, ".result.json");
             await File.WriteAllTextAsync(
@@ -506,7 +510,7 @@ public sealed class PresentMonBenchmarkService
             excludedExtreme,
             p999TailSamples,
             p999Indicative,
-            0, 0, 0, 0, 0);
+            0, 0, 0, 0, 0, 0);
     }
 
     internal static int CountRelativeSpikes(IReadOnlyList<double> frameTimes)

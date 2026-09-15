@@ -29,6 +29,7 @@ internal static class BenchmarkSelfTests
             TestSixPairsMeasurable(baseline);
             TestNoisySession(baseline);
             TestRegression(baseline);
+            TestContradictoryPrimaries(baseline);
             RecoveryJournal.RunSelfTest(root);
 
             return "Benchmark Integrity self-test OK · fuente fija · evidencia independiente · 3/6/9 · CI pareado · ruido/regresión · p99.9 · spikes 60/120/240 · recovery/PID/ownership";
@@ -105,6 +106,12 @@ internal static class BenchmarkSelfTests
     {
         var analysis = BenchmarkAnalyzer.Analyze(BuildPairs(template, 6, _ => -5, _ => -8));
         Assert(analysis.Verdict.StartsWith("REGRESIÓN MEDIBLE", StringComparison.Ordinal), "regresión consistente no fue detectada");
+    }
+
+    static void TestContradictoryPrimaries(BenchmarkCaptureResult template)
+    {
+        var analysis = BenchmarkAnalyzer.Analyze(BuildPairs(template, 6, _ => 5, _ => -7));
+        Assert(analysis.Verdict.StartsWith("SIN MEJORA DEMOSTRABLE", StringComparison.Ordinal), "métricas primarias contradictorias produjeron una afirmación global fuerte");
     }
 
     static List<BenchmarkCaptureResult> BuildPairs(
