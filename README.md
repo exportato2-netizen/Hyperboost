@@ -2,6 +2,28 @@
 
 Beta abierta de un optimizador para Windows 11 enfocado en estabilidad, frame pacing y FPS sin reducir calidad gráfica ni debilitar la seguridad del equipo.
 
+## Beta 0.6 · UI / UX Refresh
+
+Beta 0.6 cambia **solo la interfaz y la experiencia de uso**. La lógica de rendimiento, Gaming Persona, Bottleneck Gate, PresentMon, benchmark A/B, restauración y políticas temporales permanecen iguales a Beta 0.5.
+
+### Cambios visuales
+
+- navegación lateral por secciones;
+- nueva pantalla de Inicio con flujo Analiza → Juega → Comprueba;
+- tema oscuro de alto contraste;
+- tipografía y jerarquía visual más legibles;
+- cards para separar acciones, estados y explicaciones;
+- botones primarios/secundarios/peligro coherentes;
+- textos técnicos reescritos para ser más claros sin perder precisión;
+- ayuda contextual mediante paneles desplegables `ⓘ`, sin ventanas modales adicionales;
+- Gaming Persona ordenada como flujo de tres pasos;
+- Benchmark A/B presentado como captura guiada con plan, progreso y resultados separados;
+- vista “Qué modifica” más transparente, separando lo que HyperBoost puede hacer de lo que deliberadamente no toca.
+
+### Alcance congelado
+
+Beta 0.6 **no añade optimizaciones nuevas**. No cambia umbrales, allowlists, EcoQoS, Memory Priority, eventos de foreground, lógica OFF/ON, métricas ni criterios estadísticos. El objetivo de esta versión es que la misma Beta 0.5 sea más fácil de entender, usar y auditar.
+
 ## Beta 0.5 · A/B Benchmark + Event-driven Bottleneck Gate
 
 Beta 0.5 mantiene la arquitectura event-driven de 0.4 y añade una capa que faltaba: **medir si HyperBoost realmente mejora el rendimiento**. No se publica una ganancia de FPS por existir una optimización; se compara HyperBoost OFF vs ON sobre el mismo juego y se informa cuando la diferencia no supera el ruido de la propia prueba.
@@ -113,7 +135,7 @@ HyperBoost no desactiva Defender, VBS/Integridad de memoria, Secure Boot, firewa
 
 Las políticas temporales conservan PID + tiempo de creación, restauración ownership-aware y reintento si una restauración falla temporalmente.
 
-Beta 0.5 no escribe Game Mode, Game DVR ni planes de energía. La restauración legada de betas antiguas sigue validada en modo fail-closed.
+Beta 0.6 no añade escrituras nuevas. La restauración legada de betas antiguas sigue validada en modo fail-closed.
 
 ## CI / verificación
 
@@ -122,9 +144,10 @@ El workflow oficial realiza:
 1. Restore y Build;
 2. Publish self-contained x64;
 3. descarga PresentMon 2.5.1 desde el release oficial y verifica su SHA-256;
-4. ejecuta un self-test sintético del parser y analizador A/B;
-5. ejecuta un runtime smoke launch real de `HyperBoost.exe`;
-6. genera checksums y ZIP verificable.
+4. valida la superficie CLI requerida de PresentMon;
+5. ejecuta un self-test sintético del parser y analizador A/B;
+6. ejecuta un runtime smoke launch real de `HyperBoost.exe`;
+7. genera checksums y ZIP verificable.
 
 ## Compilar
 

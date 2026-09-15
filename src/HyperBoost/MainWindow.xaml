@@ -1,148 +1,383 @@
 <Window x:Class="HyperBoost.MainWindow"
  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
- Title="HyperBoost Beta" Width="1180" Height="840" MinWidth="940" MinHeight="700"
+ Title="HyperBoost Beta 0.6" Width="1320" Height="900" MinWidth="1080" MinHeight="720"
  Background="{StaticResource Bg}" WindowStartupLocation="CenterScreen">
- <Grid Margin="22">
-  <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-  <DockPanel>
-   <StackPanel><TextBlock Text="HYPERBOOST" FontSize="30" FontWeight="Bold" Foreground="{StaticResource Accent}"/><TextBlock Text="Beta 0.5 · A/B Benchmark + Event-driven Bottleneck Gate" Foreground="#94A3B8"/></StackPanel>
-   <Border DockPanel.Dock="Right" Background="#15352F" CornerRadius="16" Padding="12,6" VerticalAlignment="Center"><TextBlock Text="GPU: SOLO LECTURA" Foreground="#72F2CA" FontWeight="Bold"/></Border>
-  </DockPanel>
+ <Grid>
+  <Grid.RowDefinitions>
+   <RowDefinition Height="Auto"/>
+   <RowDefinition Height="Auto"/>
+   <RowDefinition Height="*"/>
+  </Grid.RowDefinitions>
 
-  <Border Grid.Row="1" Margin="0,18,0,14" Background="{StaticResource Panel}" CornerRadius="10" Padding="14">
-   <StackPanel>
-    <TextBlock x:Name="StatusText" Text="Inicializando motor por eventos..." FontSize="16"/>
-    <ProgressBar x:Name="Busy" Height="4" Margin="0,10,0,0" IsIndeterminate="True" Visibility="Collapsed" Foreground="{StaticResource Accent}"/>
-   </StackPanel>
+  <Border Grid.Row="0" Background="{StaticResource Sidebar}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1" Padding="24,18">
+   <Grid>
+    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+    <StackPanel>
+     <StackPanel Orientation="Horizontal">
+      <TextBlock Text="HYPERBOOST" FontSize="28" FontWeight="Bold" Foreground="{StaticResource Accent}"/>
+      <Border Margin="12,3,0,2" Padding="9,3" CornerRadius="10" Background="{StaticResource AccentSoft}" BorderBrush="#315F79" BorderThickness="1">
+       <TextBlock Text="BETA 0.6" Foreground="{StaticResource Accent}" FontSize="12" FontWeight="Bold"/>
+      </Border>
+     </StackPanel>
+     <TextBlock Margin="0,5,0,0" Text="Misma lógica de rendimiento de 0.5 · nueva interfaz y experiencia" Style="{StaticResource TinyMutedText}"/>
+    </StackPanel>
+    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+     <Border Padding="11,6" CornerRadius="12" Background="{StaticResource SuccessBg}" BorderBrush="#2B6C52" BorderThickness="1" Margin="0,0,8,0">
+      <TextBlock Text="GPU · SOLO LECTURA" Foreground="{StaticResource Success}" FontSize="12.5" FontWeight="SemiBold"/>
+     </Border>
+     <Border Padding="11,6" CornerRadius="12" Background="#1D2C3D" BorderBrush="#36516B" BorderThickness="1">
+      <TextBlock Text="Windows / NVIDIA conservan autoridad" Foreground="#C9D8E8" FontSize="12.5"/>
+     </Border>
+    </StackPanel>
+   </Grid>
   </Border>
 
-  <TabControl Grid.Row="2" Background="{StaticResource Panel}" BorderThickness="0">
-   <TabItem Header="Equipo">
-    <ScrollViewer><TextBox x:Name="HardwareText" IsReadOnly="True" TextWrapping="Wrap" FontFamily="Consolas" FontSize="14" Padding="18" Background="#101620" Foreground="#DCE7F5" BorderThickness="0"/></ScrollViewer>
+  <Border Grid.Row="1" Margin="22,14,22,12" Padding="16,13" CornerRadius="11" Background="{StaticResource Panel}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1">
+   <Grid>
+    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+    <StackPanel Orientation="Horizontal">
+     <Ellipse Width="9" Height="9" Fill="{StaticResource Accent}" VerticalAlignment="Center" Margin="0,0,10,0"/>
+     <TextBlock x:Name="StatusText" Text="Inicializando motor por eventos..." FontSize="14.5" TextWrapping="Wrap" VerticalAlignment="Center"/>
+    </StackPanel>
+    <ProgressBar x:Name="Busy" Grid.Row="1" Height="3" Margin="0,10,0,0" IsIndeterminate="True" Visibility="Collapsed"/>
+   </Grid>
+  </Border>
+
+  <TabControl Grid.Row="2" Margin="18,0,18,18" TabStripPlacement="Left" SelectedIndex="0">
+   <TabItem Header="⌂  Inicio">
+    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+     <StackPanel Margin="22,4,8,22">
+      <TextBlock Text="Inicio" Style="{StaticResource PageTitle}"/>
+      <TextBlock Margin="0,5,0,20" Text="Un resumen simple antes de entrar a las herramientas técnicas." Style="{StaticResource MutedText}"/>
+
+      <Border Style="{StaticResource SuccessCard}">
+       <Grid>
+        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+        <StackPanel>
+         <TextBlock Text="HyperBoost está diseñado para intervenir solo cuando hay evidencia" FontSize="18" FontWeight="SemiBold" Foreground="{StaticResource Success}"/>
+         <TextBlock Margin="0,6,0,0" Style="{StaticResource MutedText}" Foreground="#BFE9D7" Text="Gaming Persona y el Benchmark A/B conservan exactamente la lógica de Beta 0.5. Esta versión cambia únicamente cómo ves, entiendes y recorres la aplicación."/>
+        </StackPanel>
+        <Border Grid.Column="1" VerticalAlignment="Center" Margin="24,0,0,0" Padding="12,7" Background="#204B3C" CornerRadius="10">
+         <TextBlock Text="UI / UX ONLY" Foreground="{StaticResource Success}" FontWeight="Bold"/>
+        </Border>
+       </Grid>
+      </Border>
+
+      <Grid Margin="0,2,0,4">
+       <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="12"/><ColumnDefinition Width="*"/><ColumnDefinition Width="12"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+       <Border Grid.Column="0" Style="{StaticResource Card}">
+        <StackPanel>
+         <TextBlock Text="1 · Analiza" Style="{StaticResource SectionTitle}"/>
+         <TextBlock Margin="0,7,0,14" Text="Revisa hardware, Windows y posibles interferencias sin cambiar nada." Style="{StaticResource MutedText}"/>
+         <Button x:Name="ScanButton" Content="Analizar PC" Click="Scan_Click" HorizontalAlignment="Left"/>
+        </StackPanel>
+       </Border>
+       <Border Grid.Column="2" Style="{StaticResource Card}">
+        <StackPanel>
+         <TextBlock Text="2 · Juega" Style="{StaticResource SectionTitle}"/>
+         <TextBlock Margin="0,7,0,14" Text="Arma Gaming Persona y deja que el Gate decida si existe algo útil que hacer." Style="{StaticResource MutedText}"/>
+         <TextBlock Text="Ve a Gaming Persona →" Foreground="{StaticResource Accent}" FontWeight="SemiBold"/>
+        </StackPanel>
+       </Border>
+       <Border Grid.Column="4" Style="{StaticResource Card}">
+        <StackPanel>
+         <TextBlock Text="3 · Comprueba" Style="{StaticResource SectionTitle}"/>
+         <TextBlock Margin="0,7,0,14" Text="Usa el Benchmark A/B para separar una mejora real del ruido normal del PC." Style="{StaticResource MutedText}"/>
+         <TextBlock Text="Ve a Benchmark A/B →" Foreground="{StaticResource Accent}" FontWeight="SemiBold"/>
+        </StackPanel>
+       </Border>
+      </Grid>
+
+      <Border Style="{StaticResource Card}">
+       <StackPanel>
+        <TextBlock Text="Transparencia" Style="{StaticResource SectionTitle}"/>
+        <TextBlock Margin="0,7,0,12" Text="HyperBoost no intenta reemplazar las funciones que ya controlan Windows 11, NVIDIA App o el propio juego." Style="{StaticResource MutedText}"/>
+        <WrapPanel>
+         <Border Background="#1B2A39" CornerRadius="8" Padding="10,6" Margin="0,0,8,8"><TextBlock Text="No toca DLSS / Reflex / FG" Foreground="#C9D8E8"/></Border>
+         <Border Background="#1B2A39" CornerRadius="8" Padding="10,6" Margin="0,0,8,8"><TextBlock Text="No toca HAGS / Game Mode" Foreground="#C9D8E8"/></Border>
+         <Border Background="#1B2A39" CornerRadius="8" Padding="10,6" Margin="0,0,8,8"><TextBlock Text="No toca clocks / voltajes" Foreground="#C9D8E8"/></Border>
+         <Border Background="#1B2A39" CornerRadius="8" Padding="10,6" Margin="0,0,8,8"><TextBlock Text="No debilita seguridad" Foreground="#C9D8E8"/></Border>
+        </WrapPanel>
+       </StackPanel>
+      </Border>
+
+      <Expander Header="ⓘ  ¿Qué cambió exactamente en Beta 0.6?" Margin="2,2,0,14">
+       <Border Style="{StaticResource SoftCard}" Margin="0,10,0,0">
+        <TextBlock Style="{StaticResource MutedText}" Text="Solo presentación y experiencia: nueva jerarquía visual, mejor contraste, tipografía más legible, navegación lateral, tarjetas, textos más humanos y ayuda desplegable. Gaming Persona, Bottleneck Gate, PresentMon, métricas, reglas OFF/ON, restauración y políticas siguen siendo las de 0.5."/>
+       </Border>
+      </Expander>
+
+      <Border Style="{StaticResource WarningCard}">
+       <StackPanel>
+        <TextBlock Text="Restauración de betas antiguas" Foreground="{StaticResource Warning}" FontWeight="SemiBold" FontSize="16"/>
+        <TextBlock Margin="0,5,0,12" Foreground="#E7D2A3" TextWrapping="Wrap" Text="Este botón existe únicamente para configuraciones guardadas por versiones antiguas. Beta 0.6 no añade cambios persistentes nuevos."/>
+        <Button x:Name="RestoreButton" Content="Restaurar cambios de beta anterior" Click="Restore_Click" Style="{StaticResource SecondaryButton}" HorizontalAlignment="Left"/>
+       </StackPanel>
+      </Border>
+     </StackPanel>
+    </ScrollViewer>
    </TabItem>
 
-   <TabItem Header="Diagnóstico">
-    <ListBox x:Name="Findings" Background="#101620" BorderThickness="0">
-     <ListBox.ItemTemplate><DataTemplate><Border Margin="7" Padding="12" Background="#192231" CornerRadius="8"><StackPanel><TextBlock Text="{Binding Severity}" Foreground="{StaticResource Accent}" FontWeight="Bold"/><TextBlock Text="{Binding Title}" FontSize="16" FontWeight="SemiBold" Margin="0,3"/><TextBlock Text="{Binding Detail}" TextWrapping="Wrap" Foreground="#B8C4D6"/></StackPanel></Border></DataTemplate></ListBox.ItemTemplate>
-    </ListBox>
+   <TabItem Header="▣  Equipo">
+    <Grid Margin="22,4,8,22">
+     <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+     <TextBlock Text="Equipo" Style="{StaticResource PageTitle}"/>
+     <TextBlock Grid.Row="1" Margin="0,5,0,16" Text="Información detectada por HyperBoost. Esta vista es solo lectura." Style="{StaticResource MutedText}"/>
+     <Border Grid.Row="2" Style="{StaticResource Card}" Margin="0">
+      <TextBox x:Name="HardwareText" IsReadOnly="True" TextWrapping="Wrap" FontFamily="Cascadia Mono, Consolas" FontSize="13" Background="{StaticResource CodeBg}" Foreground="#E2EBF5" BorderThickness="0" VerticalScrollBarVisibility="Auto" Text="Pulsa “Analizar PC” desde Inicio para cargar la información del equipo."/>
+     </Border>
+    </Grid>
    </TabItem>
 
-   <TabItem Header="Gaming Persona">
-    <ScrollViewer Background="#101620">
-     <StackPanel Margin="20">
-      <TextBlock Text="GAMING PERSONA · BETA 0.5" FontSize="18" FontWeight="Bold" Foreground="{StaticResource Accent}"/>
-      <TextBlock Margin="0,7,0,14" TextWrapping="Wrap" Foreground="#B8C4D6" Text="Selecciona el juego ya abierto. Armar la Persona no aplica tweaks: HyperBoost espera EVENT_SYSTEM_FOREGROUND de Windows. Cuando el juego recibe foco, HyperBoost se pone a sí mismo en background y ejecuta un Bottleneck Gate corto antes de decidir si EcoQoS tiene sentido."/>
+   <TabItem Header="⚡  Gaming Persona">
+    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+     <StackPanel Margin="22,4,8,22">
+      <TextBlock Text="Gaming Persona" Style="{StaticResource PageTitle}"/>
+      <TextBlock Margin="0,5,0,18" Text="Selecciona el juego y deja que HyperBoost decida si existe una intervención segura que realmente tenga sentido." Style="{StaticResource MutedText}"/>
+
+      <Border Style="{StaticResource Card}">
+       <StackPanel>
+        <TextBlock Text="1 · Selecciona el juego" Style="{StaticResource SectionTitle}"/>
+        <TextBlock Margin="0,5,0,12" Text="El juego debe estar abierto. HyperBoost identifica el proceso y espera el evento de foco de Windows." Style="{StaticResource MutedText}"/>
+        <Grid>
+         <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+         <ComboBox x:Name="GameProcessCombo" Margin="0,0,10,0" DisplayMemberPath="Display" SelectionChanged="GameProcessCombo_SelectionChanged"/>
+         <Button x:Name="RefreshProcessesButton" Grid.Column="1" Content="Actualizar procesos" Click="RefreshProcesses_Click" Style="{StaticResource SecondaryButton}" Margin="0"/>
+        </Grid>
+       </StackPanel>
+      </Border>
+
+      <Border Style="{StaticResource Card}">
+       <StackPanel>
+        <TextBlock Text="2 · Políticas permitidas" Style="{StaticResource SectionTitle}"/>
+        <TextBlock Margin="0,5,0,14" Text="Marcarlas no significa que se aplicarán. El Bottleneck Gate sigue decidiendo si existe evidencia suficiente." Style="{StaticResource MutedText}"/>
+        <Border Background="#172433" CornerRadius="9" Padding="13" Margin="0,0,0,10">
+         <StackPanel>
+          <CheckBox x:Name="PersonaEcoQosCheck" IsChecked="True" Content="Permitir EcoQoS selectivo para procesos seguros" FontWeight="SemiBold"/>
+          <TextBlock Margin="25,5,0,0" Style="{StaticResource TinyMutedText}" Text="Solo puede usarse sobre PID concretos de la allowlist segura que hayan mostrado competencia CPU-I/O. No se aplica a juegos, NVIDIA, navegadores, launchers, Discord, audio, OBS, overlays, anti-cheat ni periféricos."/>
+         </StackPanel>
+        </Border>
+        <Border Background="#172433" CornerRadius="9" Padding="13">
+         <StackPanel>
+          <CheckBox x:Name="PersonaMemoryCheck" IsChecked="True" Content="Permitir Memory Priority adaptativa (5 → 4)" FontWeight="SemiBold"/>
+          <TextBlock Margin="25,5,0,0" Style="{StaticResource TinyMutedText}" Text="Solo entra en juego bajo presión real de RAM y únicamente sobre la misma lista segura. No vacía memoria ni fuerza limpiezas agresivas."/>
+         </StackPanel>
+        </Border>
+       </StackPanel>
+      </Border>
+
+      <Border Style="{StaticResource Card}">
+       <Grid>
+        <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+        <TextBlock Text="3 · Arma la sesión" Style="{StaticResource SectionTitle}"/>
+        <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,12,0,12">
+         <Button x:Name="StartPersonaButton" Content="Armar Gaming Persona" Click="StartPersona_Click"/>
+         <Button x:Name="StopPersonaButton" Content="Detener y restaurar" Click="StopPersona_Click" Style="{StaticResource DangerButton}"/>
+        </StackPanel>
+        <Border Grid.Row="2" Background="#101A26" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="9" Padding="13">
+         <StackPanel Orientation="Horizontal">
+          <Ellipse Width="9" Height="9" Fill="{StaticResource Accent}" VerticalAlignment="Top" Margin="0,6,10,0"/>
+          <TextBlock x:Name="PersonaStatus" TextWrapping="Wrap" Text="Gaming Persona detenida." LineHeight="20"/>
+         </StackPanel>
+        </Border>
+       </Grid>
+      </Border>
+
+      <Expander Header="ⓘ  ¿Qué ocurre al armar Gaming Persona?" Margin="2,0,0,14">
+       <Border Style="{StaticResource SoftCard}" Margin="0,10,0,0">
+        <TextBlock Style="{StaticResource MutedText}" Text="Armar no aplica un tweak de inmediato. HyperBoost espera a que Windows informe que el juego tiene foco, se pone a sí mismo en modo background y ejecuta un Gate corto. El Gate puede permitir una acción selectiva o concluir que lo correcto es no tocar nada."/>
+       </Border>
+      </Expander>
+
+      <Border Style="{StaticResource Card}">
+       <StackPanel>
+        <TextBlock Text="Bottleneck Gate" Style="{StaticResource SectionTitle}"/>
+        <TextBlock Margin="0,5,0,10" Text="Decisión automática basada en CPU, GPU, RAM e I-O. La GPU se observa mediante WDDM y permanece en solo lectura." Style="{StaticResource MutedText}"/>
+        <TextBox x:Name="GateText" Style="{StaticResource CodeBox}" MinHeight="175" TextWrapping="NoWrap" HorizontalScrollBarVisibility="Auto" Text="Aún no hay una evaluación del Bottleneck Gate."/>
+       </StackPanel>
+      </Border>
+
+      <Border Style="{StaticResource Card}">
+       <StackPanel>
+        <Grid>
+         <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+         <StackPanel>
+          <TextBlock Text="Escáner CPU / I-O" Style="{StaticResource SectionTitle}"/>
+          <TextBlock Margin="0,5,20,0" Text="Medición manual auxiliar y de solo lectura para ver qué está compitiendo en segundo plano." Style="{StaticResource MutedText}"/>
+         </StackPanel>
+         <Button x:Name="ScanInterferenceButton" Grid.Column="1" Content="Medir ahora" HorizontalAlignment="Right" VerticalAlignment="Center" Click="ScanInterference_Click"/>
+        </Grid>
+        <TextBox x:Name="InterferenceText" Margin="0,12,0,0" Style="{StaticResource CodeBox}" MinHeight="160" TextWrapping="NoWrap" HorizontalScrollBarVisibility="Auto" Text="Aún no se ha realizado una medición manual."/>
+       </StackPanel>
+      </Border>
+
+      <Border Style="{StaticResource WarningCard}">
+       <TextBlock TextWrapping="Wrap" Foreground="#E7D2A3" LineHeight="21" Text="Diseño de bajo overhead: no existe el antiguo timer periódico de 1,2 s. Foco y salida del juego son eventos. La pérdida de foco usa únicamente una espera one-shot de 2 s para ignorar overlays o Alt+Tab breve."/>
+      </Border>
+     </StackPanel>
+    </ScrollViewer>
+   </TabItem>
+
+   <TabItem Header="◫  Benchmark A/B">
+    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+     <StackPanel Margin="22,4,8,22">
+      <TextBlock Text="Benchmark A/B" Style="{StaticResource PageTitle}"/>
+      <TextBlock Margin="0,5,0,18" Text="Mide HyperBoost OFF vs ON con PresentMon y decide si la diferencia supera el ruido natural de las pruebas." Style="{StaticResource MutedText}"/>
+
+      <Border Style="{StaticResource SuccessCard}">
+       <StackPanel>
+        <TextBlock Text="Captura guiada" FontSize="17" FontWeight="SemiBold" Foreground="{StaticResource Success}"/>
+        <TextBlock Margin="0,6,0,0" TextWrapping="Wrap" Foreground="#BFE9D7" LineHeight="21" Text="Prepara una pasada, vuelve al juego y pulsa CTRL+SHIFT+F11 justo donde quieras iniciar. PresentMon captura solo el PID seleccionado durante el tiempo configurado. Si haces Alt+Tab durante la pasada, esa muestra se cancela para no contaminar la comparación."/>
+       </StackPanel>
+      </Border>
+
+      <Border Style="{StaticResource Card}">
+       <StackPanel>
+        <TextBlock Text="1 · Juego y duración" Style="{StaticResource SectionTitle}"/>
+        <Grid Margin="0,12,0,14">
+         <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+         <ComboBox x:Name="BenchmarkGameProcessCombo" Margin="0,0,10,0" DisplayMemberPath="Display" SelectionChanged="BenchmarkGameProcessCombo_SelectionChanged"/>
+         <Button x:Name="BenchmarkRefreshButton" Grid.Column="1" Content="Actualizar procesos" Click="BenchmarkRefresh_Click" Style="{StaticResource SecondaryButton}" Margin="0"/>
+        </Grid>
+        <Grid>
+         <Grid.ColumnDefinitions><ColumnDefinition Width="220"/><ColumnDefinition Width="18"/><ColumnDefinition Width="220"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+         <StackPanel Grid.Column="0">
+          <TextBlock Text="Pares OFF / ON" FontWeight="SemiBold" Margin="0,0,0,6"/>
+          <ComboBox x:Name="BenchmarkPairsCombo" SelectedIndex="1">
+           <ComboBoxItem Content="2 pares" Tag="2"/>
+           <ComboBoxItem Content="3 pares · recomendado" Tag="3"/>
+           <ComboBoxItem Content="5 pares" Tag="5"/>
+          </ComboBox>
+         </StackPanel>
+         <StackPanel Grid.Column="2">
+          <TextBlock Text="Duración por pasada" FontWeight="SemiBold" Margin="0,0,0,6"/>
+          <ComboBox x:Name="BenchmarkDurationCombo" SelectedIndex="1">
+           <ComboBoxItem Content="15 segundos" Tag="15"/>
+           <ComboBoxItem Content="30 segundos" Tag="30"/>
+           <ComboBoxItem Content="60 segundos" Tag="60"/>
+          </ComboBox>
+         </StackPanel>
+        </Grid>
+       </StackPanel>
+      </Border>
+
+      <Border Style="{StaticResource Card}">
+       <StackPanel>
+        <TextBlock Text="2 · Ejecuta el plan" Style="{StaticResource SectionTitle}"/>
+        <TextBlock Margin="0,5,0,12" Style="{StaticResource MutedText}" Text="La condición ON utiliza exactamente las políticas que estén marcadas en Gaming Persona al crear la sesión. Esas opciones quedan congeladas hasta terminar el A/B."/>
+        <StackPanel Orientation="Horizontal">
+         <Button x:Name="BenchmarkCreateButton" Content="Crear sesión A/B" Click="BenchmarkCreate_Click"/>
+         <Button x:Name="BenchmarkNextButton" Content="Preparar siguiente pasada" Click="BenchmarkNext_Click"/>
+         <Button x:Name="BenchmarkCancelButton" Content="Cancelar sesión" Click="BenchmarkCancel_Click" Style="{StaticResource DangerButton}"/>
+        </StackPanel>
+        <Border Background="#101A26" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="9" Padding="13" Margin="0,13,0,0">
+         <TextBlock x:Name="BenchmarkStatusText" TextWrapping="Wrap" LineHeight="20" Text="No hay una sesión A/B activa."/>
+        </Border>
+       </StackPanel>
+      </Border>
 
       <Grid>
-       <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-       <ComboBox x:Name="GameProcessCombo" MinHeight="36" Margin="0,0,8,0" DisplayMemberPath="Display" SelectionChanged="GameProcessCombo_SelectionChanged" Foreground="#111827"/>
-       <Button x:Name="RefreshProcessesButton" Grid.Column="1" Content="Actualizar procesos" Click="RefreshProcesses_Click"/>
+       <Grid.ColumnDefinitions><ColumnDefinition Width="0.9*"/><ColumnDefinition Width="14"/><ColumnDefinition Width="1.1*"/></Grid.ColumnDefinitions>
+       <Border Grid.Column="0" Style="{StaticResource Card}">
+        <StackPanel>
+         <TextBlock Text="Plan y progreso" Style="{StaticResource SectionTitle}"/>
+         <TextBlock Margin="0,5,0,10" Text="Orden contrabalanceado para reducir sesgo térmico y de orden." Style="{StaticResource TinyMutedText}"/>
+         <TextBox x:Name="BenchmarkPlanText" Style="{StaticResource CodeBox}" MinHeight="235" Text="Crea una sesión para generar el plan contrabalanceado."/>
+        </StackPanel>
+       </Border>
+       <Border Grid.Column="2" Style="{StaticResource Card}">
+        <StackPanel>
+         <TextBlock Text="Resultado" Style="{StaticResource SectionTitle}"/>
+         <TextBlock Margin="0,5,0,10" Text="FPS, lows, frametimes y stutters con señal comparada contra el ruido OFF." Style="{StaticResource TinyMutedText}"/>
+         <TextBox x:Name="BenchmarkResultsText" Style="{StaticResource CodeBox}" MinHeight="235" TextWrapping="NoWrap" HorizontalScrollBarVisibility="Auto" Text="FPS promedio, 1% Low, 0.1% Low, p95/p99 y stutters aparecerán aquí. El veredicto compara la señal contra el ruido medido en las propias pasadas OFF."/>
+        </StackPanel>
+       </Border>
       </Grid>
 
-      <TextBlock Margin="0,18,0,7" Text="POLÍTICAS DISPONIBLES · EL GATE DECIDE SI SE USAN" FontWeight="Bold"/>
-      <CheckBox x:Name="PersonaEcoQosCheck" IsChecked="True" Margin="2,4" Content="Permitir EcoQoS solo para procesos de la allowlist segura si el Gate detecta competencia"/>
-      <TextBlock Margin="24,0,0,7" TextWrapping="Wrap" Foreground="#94A3B8" Text="No se aplica a navegadores, Steam/Epic, Discord, audio, OBS, overlays, NVIDIA, anti-cheat ni periféricos. Si el juego está GPU-bound y no hay competencia relevante, el Gate devuelve NO HACER CAMBIOS."/>
+      <Expander Header="ⓘ  ¿Cómo consigo una medición confiable?" Margin="2,0,0,14">
+       <Border Style="{StaticResource SoftCard}" Margin="0,10,0,0">
+        <TextBlock Style="{StaticResource MutedText}" Text="Usa la misma resolución, calidad gráfica, DLSS/FSR/XeSS, Frame Generation, límite de FPS y escena en todas las pasadas. Lo ideal es un benchmark interno del juego o una ruta repetible. Una diferencia pequeña o inconsistente se informa como ruido y no como ganancia."/>
+       </Border>
+      </Expander>
 
-      <CheckBox x:Name="PersonaMemoryCheck" IsChecked="True" Margin="2,6,0,4" Content="Memory Priority adaptativa (5 → 4 únicamente bajo presión real de RAM)"/>
-      <TextBlock Margin="24,0,0,12" TextWrapping="Wrap" Foreground="#94A3B8" Text="Usa notificaciones nativas de memoria de Windows cuando están disponibles y mantiene la comprobación conservadora de RAM. Solo afecta la misma allowlist segura."/>
-
-      <StackPanel Orientation="Horizontal" Margin="0,4,0,12">
-       <Button x:Name="StartPersonaButton" Content="Armar Gaming Persona" Click="StartPersona_Click"/>
-       <Button x:Name="StopPersonaButton" Content="Detener y restaurar" Click="StopPersona_Click" Background="#334155" Foreground="White"/>
-      </StackPanel>
-
-      <Border Background="#192231" CornerRadius="8" Padding="12" Margin="0,0,0,14">
-       <TextBlock x:Name="PersonaStatus" TextWrapping="Wrap" Text="Gaming Persona detenida."/>
-      </Border>
-
-      <TextBlock Text="BOTTLENECK GATE · CPU / GPU / RAM / I-O" FontSize="16" FontWeight="Bold" Foreground="{StaticResource Accent}"/>
-      <TextBlock Margin="0,6,0,8" TextWrapping="Wrap" Foreground="#B8C4D6" Text="Se ejecuta automáticamente con el juego en foco. La lectura GPU usa contadores WDDM de Windows y solo observa el motor más ocupado por proceso; no escribe NVIDIA App, HAGS, DLSS, Reflex ni perfiles 3D."/>
-      <TextBox x:Name="GateText" Margin="0,4,0,16" MinHeight="165" IsReadOnly="True" TextWrapping="NoWrap" FontFamily="Consolas" FontSize="12" Padding="10" Background="#0B111A" Foreground="#DCE7F5" BorderThickness="0" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" Text="Aún no hay una evaluación del Bottleneck Gate."/>
-
-      <Separator Margin="0,2,0,16"/>
-      <TextBlock Text="ESCÁNER CPU / I-O · SOLO LECTURA" FontSize="16" FontWeight="Bold" Foreground="{StaticResource Accent}"/>
-      <TextBlock Margin="0,6,0,10" TextWrapping="Wrap" Foreground="#B8C4D6" Text="Medición manual auxiliar con reloj monotónico y PID + tiempo de creación. El análisis GPU principal se hace con el juego realmente en foco para evitar una lectura engañosa."/>
-      <Button x:Name="ScanInterferenceButton" Content="Medir CPU / I-O ahora" HorizontalAlignment="Left" Click="ScanInterference_Click"/>
-      <TextBox x:Name="InterferenceText" Margin="0,10,0,4" MinHeight="150" IsReadOnly="True" TextWrapping="NoWrap" FontFamily="Consolas" FontSize="12" Padding="10" Background="#0B111A" Foreground="#DCE7F5" BorderThickness="0" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" Text="Aún no se ha realizado una medición manual."/>
-
-      <Border Background="#2A2115" CornerRadius="8" Padding="12" Margin="0,14,0,0">
-       <TextBlock TextWrapping="Wrap" Foreground="#F6D58B" Text="Zero-overhead por diseño: no existe timer periódico de 1,2 s. Foco y salida del juego son eventos. Una pérdida de foco crea solo un temporizador one-shot de 2 s para ignorar overlays/Alt+Tab breve. HyperBoost vuelve a prioridad normal apenas el juego deja de ser foreground."/>
+      <Border Style="{StaticResource WarningCard}">
+       <TextBlock TextWrapping="Wrap" Foreground="#E7D2A3" LineHeight="21" Text="Metodología conservadora: 1% Low = 1000/p99 de frametime; 0.1% Low = 1000/p99.9. Los CSV crudos, JSON y reporte permanecen en %LOCALAPPDATA%\HyperBoost\Benchmarks para poder auditar cada resultado."/>
       </Border>
      </StackPanel>
     </ScrollViewer>
    </TabItem>
 
-   <TabItem Header="Benchmark A/B">
-    <ScrollViewer Background="#101620">
-     <StackPanel Margin="20">
-      <TextBlock Text="RENDIMIENTO REAL · A/B BENCHMARK" FontSize="18" FontWeight="Bold" Foreground="{StaticResource Accent}"/>
-      <TextBlock Margin="0,7,0,12" TextWrapping="Wrap" Foreground="#B8C4D6" Text="Compara HyperBoost OFF vs ON sobre el mismo juego usando PresentMon 2.5.1 verificado. El plan alterna AB/BA entre pares para reducir sesgo por calentamiento, boost o deriva térmica. Usa el benchmark interno del juego o repite exactamente la misma ruta/escena en cada pasada."/>
+   <TabItem Header="◎  Diagnóstico">
+    <Grid Margin="22,4,8,22">
+     <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+     <TextBlock Text="Diagnóstico" Style="{StaticResource PageTitle}"/>
+     <TextBlock Grid.Row="1" Margin="0,5,0,16" Text="Hallazgos del análisis del equipo, presentados como información y no como cambios automáticos." Style="{StaticResource MutedText}"/>
+     <ListBox x:Name="Findings" Grid.Row="2" Background="Transparent" BorderThickness="0" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+      <ListBox.ItemTemplate>
+       <DataTemplate>
+        <Border Style="{StaticResource Card}" Margin="0,0,6,10">
+         <StackPanel>
+          <StackPanel Orientation="Horizontal">
+           <Border Background="{StaticResource AccentSoft}" CornerRadius="7" Padding="8,3" Margin="0,0,10,0">
+            <TextBlock Text="{Binding Severity}" Foreground="{StaticResource Accent}" FontSize="12" FontWeight="Bold"/>
+           </Border>
+           <TextBlock Text="{Binding Title}" FontSize="16" FontWeight="SemiBold" VerticalAlignment="Center"/>
+          </StackPanel>
+          <TextBlock Text="{Binding Detail}" Margin="0,9,0,0" TextWrapping="Wrap" Foreground="{StaticResource TextSecondary}" LineHeight="20"/>
+         </StackPanel>
+        </Border>
+       </DataTemplate>
+      </ListBox.ItemTemplate>
+     </ListBox>
+    </Grid>
+   </TabItem>
 
-      <Border Background="#15352F" CornerRadius="8" Padding="12" Margin="0,0,0,14">
-       <TextBlock TextWrapping="Wrap" Foreground="#72F2CA" Text="CAPTURA: prepara una pasada, vuelve al juego y pulsa CTRL+SHIFT+F11 exactamente cuando quieras iniciar la muestra. PresentMon grabará solo el PID seleccionado durante el tiempo configurado. Si cambias de ventana durante la pasada, HyperBoost cancela y descarta esa medición."/>
-      </Border>
+   <TabItem Header="ⓘ  Qué modifica">
+    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+     <StackPanel Margin="22,4,8,22">
+      <TextBlock Text="Qué modifica HyperBoost" Style="{StaticResource PageTitle}"/>
+      <TextBlock Margin="0,5,0,18" Text="Una vista transparente de los límites de la aplicación." Style="{StaticResource MutedText}"/>
 
-      <Grid Margin="0,0,0,12">
-       <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-       <ComboBox x:Name="BenchmarkGameProcessCombo" MinHeight="36" Margin="0,0,8,0" DisplayMemberPath="Display" SelectionChanged="BenchmarkGameProcessCombo_SelectionChanged" Foreground="#111827"/>
-       <Button x:Name="BenchmarkRefreshButton" Grid.Column="1" Content="Actualizar procesos" Click="BenchmarkRefresh_Click"/>
+      <Grid>
+       <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="14"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+       <Border Grid.Column="0" Style="{StaticResource SuccessCard}">
+        <StackPanel>
+         <TextBlock Text="HyperBoost puede hacer" Foreground="{StaticResource Success}" FontSize="18" FontWeight="SemiBold"/>
+         <TextBlock Margin="0,10,0,0" Style="{StaticResource MutedText}" Foreground="#BFE9D7" Text="• Observar CPU, GPU, RAM e I-O.&#10;• Poner su propio proceso en background mientras juegas.&#10;• Aplicar EcoQoS temporal solo a PID seguros aprobados por el Gate.&#10;• Reducir Memory Priority 5→4 bajo presión real de RAM.&#10;• Medir OFF vs ON con PresentMon.&#10;• Restaurar sus cambios temporales con ownership-aware restore."/>
+        </StackPanel>
+       </Border>
+       <Border Grid.Column="2" Style="{StaticResource Card}">
+        <StackPanel>
+         <TextBlock Text="HyperBoost no toca" Foreground="#DCE8F5" FontSize="18" FontWeight="SemiBold"/>
+         <TextBlock Margin="0,10,0,0" Style="{StaticResource MutedText}" Text="• Game Mode / Game DVR / HAGS.&#10;• Planes globales de energía.&#10;• DLSS / Reflex / Frame Generation / G-SYNC.&#10;• Perfiles NVIDIA / AMD.&#10;• Clocks, voltajes, potencia o ventiladores.&#10;• Defender, VBS, Secure Boot o anti-cheat.&#10;• BCD / HPET / afinidad forzada / core parking."/>
+        </StackPanel>
+       </Border>
       </Grid>
 
-      <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
-       <StackPanel Margin="0,0,22,0">
-        <TextBlock Text="Pares A/B" FontWeight="Bold" Margin="0,0,0,4"/>
-        <ComboBox x:Name="BenchmarkPairsCombo" Width="130" SelectedIndex="1" Foreground="#111827">
-         <ComboBoxItem Content="2 pares" Tag="2"/>
-         <ComboBoxItem Content="3 pares (recomendado)" Tag="3"/>
-         <ComboBoxItem Content="5 pares" Tag="5"/>
-        </ComboBox>
-       </StackPanel>
+      <Border Style="{StaticResource Card}">
        <StackPanel>
-        <TextBlock Text="Duración por pasada" FontWeight="Bold" Margin="0,0,0,4"/>
-        <ComboBox x:Name="BenchmarkDurationCombo" Width="150" SelectedIndex="1" Foreground="#111827">
-         <ComboBoxItem Content="15 segundos" Tag="15"/>
-         <ComboBoxItem Content="30 segundos" Tag="30"/>
-         <ComboBoxItem Content="60 segundos" Tag="60"/>
-        </ComboBox>
+        <TextBlock Text="GPU" Style="{StaticResource SectionTitle}"/>
+        <TextBlock Margin="0,6,0,0" Style="{StaticResource MutedText}" Text="La lectura GPU usa contadores WDDM y es solo diagnóstico. HyperBoost no altera procesos gráficos ni opciones del driver."/>
        </StackPanel>
-      </StackPanel>
-
-      <TextBlock Margin="0,0,0,10" TextWrapping="Wrap" Foreground="#94A3B8" Text="ON usa las políticas marcadas en Gaming Persona (EcoQoS y/o Memory Priority). OFF mantiene HyperBoost abierto, pero sin Gaming Persona ni cambios sobre procesos. Mantén idénticos resolución, gráficos, DLSS/FSR/XeSS, Frame Generation, límite de FPS y escena en todas las pasadas."/>
-
-      <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
-       <Button x:Name="BenchmarkCreateButton" Content="Crear sesión A/B" Click="BenchmarkCreate_Click"/>
-       <Button x:Name="BenchmarkNextButton" Content="Preparar siguiente pasada" Click="BenchmarkNext_Click"/>
-       <Button x:Name="BenchmarkCancelButton" Content="Cancelar sesión" Click="BenchmarkCancel_Click" Background="#334155" Foreground="White"/>
-      </StackPanel>
-
-      <Border Background="#192231" CornerRadius="8" Padding="12" Margin="0,0,0,12">
-       <TextBlock x:Name="BenchmarkStatusText" TextWrapping="Wrap" Text="No hay una sesión A/B activa."/>
       </Border>
 
-      <TextBlock Text="PLAN / PROGRESO" FontSize="15" FontWeight="Bold" Foreground="{StaticResource Accent}"/>
-      <TextBox x:Name="BenchmarkPlanText" Margin="0,6,0,14" MinHeight="120" IsReadOnly="True" FontFamily="Consolas" FontSize="12" Padding="10" Background="#0B111A" Foreground="#DCE7F5" BorderThickness="0" VerticalScrollBarVisibility="Auto" Text="Crea una sesión para generar el plan contrabalanceado."/>
+      <Border Style="{StaticResource Card}">
+       <StackPanel>
+        <TextBlock Text="Benchmark A/B" Style="{StaticResource SectionTitle}"/>
+        <TextBlock Margin="0,6,0,0" Style="{StaticResource MutedText}" Text="OFF mantiene la aplicación abierta sin Gaming Persona. ON usa el mismo Gate y las políticas elegidas al crear la sesión. El benchmark no cambia gráficos ni el driver y conserva las capturas crudas."/>
+       </StackPanel>
+      </Border>
 
-      <TextBlock Text="RESULTADO" FontSize="15" FontWeight="Bold" Foreground="{StaticResource Accent}"/>
-      <TextBox x:Name="BenchmarkResultsText" Margin="0,6,0,4" MinHeight="260" IsReadOnly="True" TextWrapping="NoWrap" FontFamily="Consolas" FontSize="12" Padding="10" Background="#0B111A" Foreground="#DCE7F5" BorderThickness="0" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" Text="FPS promedio, 1% Low, 0.1% Low, p95/p99 y stutters aparecerán aquí. El veredicto compara la señal contra el ruido medido en las propias pasadas OFF."/>
-
-      <Border Background="#2A2115" CornerRadius="8" Padding="12" Margin="0,14,0,0">
-       <TextBlock TextWrapping="Wrap" Foreground="#F6D58B" Text="Metodología conservadora: 1% Low = 1000/p99 de frametime; 0.1% Low = 1000/p99.9. Se conservan los CSV crudos de PresentMon y un JSON/reporte en %LOCALAPPDATA%\HyperBoost\Benchmarks. Una diferencia pequeña o inconsistente se informa como ruido, no como ganancia."/>
+      <Border Style="{StaticResource Card}">
+       <StackPanel>
+        <TextBlock Text="Beta 0.6" Style="{StaticResource SectionTitle}"/>
+        <TextBlock Margin="0,6,0,0" Style="{StaticResource MutedText}" Text="Esta versión no añade ninguna política nueva. Solo reorganiza y explica mejor la experiencia existente de Beta 0.5."/>
+       </StackPanel>
       </Border>
      </StackPanel>
-    </ScrollViewer>
-   </TabItem>
-
-   <TabItem Header="Qué modifica">
-    <ScrollViewer Background="#101620">
-     <TextBlock Padding="20" TextWrapping="Wrap" FontSize="15" Text="WINDOWS/NVIDIA: NO LOS DUPLICA&#10;Game Mode, captura/Game DVR, optimizaciones para juegos en ventanas, HAGS, plan de energía y políticas del juego quedan en Windows. DLSS, Smooth Motion, Low Latency/Reflex, G-SYNC, límites de FPS, ShadowPlay, perfiles 3D y tuning quedan en NVIDIA App/driver.&#10;&#10;HYPERBOOST 0.5&#10;Mantiene el motor event-driven de 0.4 y añade benchmark A/B con PresentMon oficial. OFF no aplica Gaming Persona; ON usa el mismo Bottleneck Gate y políticas marcadas. El benchmark no cambia gráficos ni el driver y conserva CSV crudos para auditoría.&#10;&#10;GPU&#10;Solo lectura mediante contadores WDDM. Se muestra el motor más ocupado por proceso para detectar competencia visible; HyperBoost no altera procesos gráficos ni opciones del driver.&#10;&#10;RESTAURACIÓN&#10;PID + tiempo de creación, ownership-aware restore y reintento de restauraciones temporales siguen vigentes.&#10;&#10;COMPATIBILIDAD&#10;El botón inferior de restauración solo se usa para backups de betas antiguas. Beta 0.5 no escribe Game Mode, Game DVR ni planes de energía."/>
     </ScrollViewer>
    </TabItem>
   </TabControl>
-
-  <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,14,0,0">
-   <Button x:Name="ScanButton" Content="Analizar PC" Click="Scan_Click"/>
-   <Button x:Name="RestoreButton" Content="Restaurar cambios de beta anterior" Click="Restore_Click" Background="#334155" Foreground="White"/>
-  </StackPanel>
  </Grid>
 </Window>
