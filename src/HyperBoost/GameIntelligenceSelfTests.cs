@@ -141,7 +141,7 @@ internal static class GameIntelligenceSelfTests
                 "{\"schemaVersion\":2,\"game\":{\"Name\":\"SyntheticGame\"},\"pairs\":3,\"captureSeconds\":15,\"onPolicies\":{\"ecoQos\":true,\"memoryPriority\":false}}" );
 
             var service = new GameIntelligenceService(library, benchmarks);
-            service.InitializeAsync().GetAwaiter().GetResult();
+            Task.Run(() => service.InitializeAsync()).GetAwaiter().GetResult();
             Assert(service.Profiles.Sum(x => x.Sessions.Count) == 2, "importación moderna/legacy incompleta");
             Assert(service.Profiles.SelectMany(x => x.Sessions).Count(x => x.LegacyIncomplete) == 1,
                 "schema legado no fue conservado como histórico no agregable");
@@ -149,7 +149,7 @@ internal static class GameIntelligenceSelfTests
             Assert(!File.Exists(Path.Combine(library, "evidence-library-v1.json.tmp")), "quedó temporal tras escritura atómica");
 
             var reloaded = new GameIntelligenceService(library, benchmarks);
-            reloaded.InitializeAsync().GetAwaiter().GetResult();
+            Task.Run(() => reloaded.InitializeAsync()).GetAwaiter().GetResult();
             Assert(reloaded.Profiles.Sum(x => x.Sessions.Count) == 2, "reload duplicó o perdió sesiones importadas");
         }
         finally
