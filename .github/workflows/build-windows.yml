@@ -53,7 +53,7 @@ jobs:
           Write-Host "PresentMon CLI smoke test OK (help exit code $presentMonHelpExit)."
           $global:LASTEXITCODE = 0
           exit 0
-      - name: Benchmark parser self-test
+      - name: Benchmark Integrity self-test
         shell: pwsh
         run: |
           $ok = Join-Path $env:TEMP 'HyperBoost-benchmark-selftest.ok'
@@ -100,9 +100,9 @@ jobs:
             "$hyper  HyperBoost.exe"
             "$present  PresentMon-2.5.1-x64.exe"
           ) | Set-Content -Encoding ascii publish/SHA256SUMS.txt
-          Compress-Archive -Path publish/HyperBoost.exe,publish/PresentMon-2.5.1-x64.exe,publish/PRESENTMON-LICENSE.txt,publish/SHA256SUMS.txt -DestinationPath HyperBoost-Beta-0.6-win-x64.zip -Force
+          Compress-Archive -Path publish/HyperBoost.exe,publish/PresentMon-2.5.1-x64.exe,publish/PRESENTMON-LICENSE.txt,publish/SHA256SUMS.txt -DestinationPath HyperBoost-Beta-0.6.1-win-x64.zip -Force
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: HyperBoost-Beta-0.6-win-x64
-          path: HyperBoost-Beta-0.6-win-x64.zip
+          name: HyperBoost-Beta-0.6.1-win-x64
+          path: HyperBoost-Beta-0.6.1-win-x64.zip
           if-no-files-found: error

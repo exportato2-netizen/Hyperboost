@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text;
 
@@ -12,7 +13,8 @@ public sealed record BottleneckGateResult(
     uint MemoryLoad,
     double AvailableMemoryGb,
     IReadOnlyList<InterferenceSample> Interference,
-    GpuScanResult Gpu)
+    GpuScanResult Gpu,
+    double EvaluationDurationMs)
 {
     public bool AllowEcoQos => EcoQosPids.Count > 0;
 
@@ -24,7 +26,8 @@ public sealed record BottleneckGateResult(
           .AppendLine($"GPU JUEGO  {(Gpu.Available ? $"{GameGpuPercent:0.0}%" : "no disponible")}")
           .AppendLine($"GPU OTROS  {(Gpu.Available ? $"{HighestOtherGpuPercent:0.0}%" : "no disponible")}")
           .AppendLine($"RAM        {MemoryLoad}% usada · {AvailableMemoryGb:0.0} GB libres")
-          .AppendLine($"EcoQoS     {(AllowEcoQos ? $"PID(s) aprobados: {string.Join(", ", EcoQosPids)}" : "ningún PID aprobado")}");
+          .AppendLine($"EcoQoS     {(AllowEcoQos ? $"PID(s) aprobados: {string.Join(", ", EcoQosPids)}" : "ningún PID aprobado")}")
+          .AppendLine("ALCANCE    EcoQoS afecta scheduling/execution QoS; no limita directamente disco ni red.");
 
         if (Gpu.Processes.Count > 0)
         {
@@ -59,6 +62,7 @@ public sealed class BottleneckGateService
         GamingPersonaService persona,
         CancellationToken cancellationToken = default)
     {
+        var clock = Stopwatch.StartNew();
         var interferenceTask = persona.ScanInterferenceAsync(gamePid, cancellationToken);
         var gpuTask = gpuScanner.ScanAsync(cancellationToken);
         await Task.WhenAll(interferenceTask, gpuTask);
@@ -77,7 +81,7 @@ public sealed class BottleneckGateService
 
         var strongSafeBackground = interference
             .Where(x => x.EligibleForAutomaticQoS)
-            .Where(x => x.CpuPercent >= 0.25 || x.IoMbPerSec >= 0.50)
+            .Where(x => x.CpuPercent >= 0.25)
             .ToList();
 
         var ecoPids = strongSafeBackground.Select(x => x.Pid).Distinct().ToList();
@@ -91,7 +95,7 @@ public sealed class BottleneckGateService
         if (memoryPressure)
         {
             decision = ecoPids.Count > 0 ? "Intervenir de forma selectiva" : "Solo memoria si corresponde";
-            summary = "Windows está bajo presión de RAM. La prioridad de memoria adaptativa puede actuar solo sobre la lista segura; EcoQoS se limita a PID(s) que demostraron CPU/I-O durante esta muestra.";
+            summary = "Windows está bajo presión de RAM. Memory Priority EXPERIMENTAL puede actuar solo sobre la lista segura; EcoQoS se limita a PID(s) que demostraron competencia de ejecución CPU. El I/O se observa, pero no se limita.";
         }
         else if (gpuSaturated && ecoPids.Count == 0)
         {
@@ -106,7 +110,7 @@ public sealed class BottleneckGateService
         else if (ecoPids.Count > 0)
         {
             decision = "EcoQoS selectivo permitido";
-            summary = "Se detectó actividad CPU/I-O medible en PID(s) de la allowlist segura. Solo esos PID concretos quedan autorizados mientras el juego mantenga foco.";
+            summary = "Se detectó actividad CPU medible en PID(s) de la allowlist segura. EcoQoS puede reducir competencia de ejecución CPU; no limita directamente el tráfico de disco o red.";
         }
         else
         {
@@ -123,7 +127,8 @@ public sealed class BottleneckGateService
             memory.MemoryLoad,
             memory.AvailableGb,
             interference,
-            gpu);
+            gpu,
+            clock.Elapsed.TotalMilliseconds);
     }
 
     static MemorySnapshot ReadMemory()

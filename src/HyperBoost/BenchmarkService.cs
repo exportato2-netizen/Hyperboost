@@ -13,6 +13,26 @@ public enum BenchmarkMode
     On
 }
 
+public enum BenchmarkScenarioType
+{
+    BuiltInBenchmark,
+    RepeatableRoute,
+    ManualScene,
+    StressTest
+}
+
+public static class BenchmarkScenarioTypeExtensions
+{
+    public static string DisplayName(this BenchmarkScenarioType value) => value switch
+    {
+        BenchmarkScenarioType.BuiltInBenchmark => "Benchmark integrado",
+        BenchmarkScenarioType.RepeatableRoute => "Ruta repetible",
+        BenchmarkScenarioType.ManualScene => "Escena manual",
+        BenchmarkScenarioType.StressTest => "Stress test",
+        _ => value.ToString()
+    };
+}
+
 public sealed record BenchmarkPlanItem(int Sequence, int Pair, BenchmarkMode Mode)
 {
     public string Label => $"Pasada {Sequence} · Par {Pair} · HyperBoost {Mode.ToString().ToUpperInvariant()}";
@@ -34,12 +54,43 @@ public sealed record BenchmarkCaptureResult(
     double P95FrameTimeMs,
     double P99FrameTimeMs,
     double P999FrameTimeMs,
-    int StutterCount,
-    double StutterThresholdMs,
-    double StutterRatePercent);
+    int SevereStallCount,
+    double SevereStallThresholdMs,
+    double SevereStallRatePercent,
+    int RelativeSpikeCount,
+    double RelativeSpikeRatePercent,
+    int ExtremeStallCount,
+    int InvalidDataCount,
+    int PercentileExcludedExtremeCount,
+    int P999TailSamples,
+    bool P999Indicative,
+    double HyperBoostCpuPercent,
+    double HyperBoostWorkingSetMb,
+    double HyperBoostIoMb,
+    double PresentMonCpuPercent,
+    double PresentMonWorkingSetMb)
+{
+    // Compatibilidad de lectura/UI con sesiones Beta 0.5/0.6.
+    public int StutterCount => SevereStallCount;
+    public double StutterThresholdMs => SevereStallThresholdMs;
+    public double StutterRatePercent => SevereStallRatePercent;
+}
+
+public sealed record ConfidenceInterval(
+    double? LowerPercent,
+    double? UpperPercent,
+    bool Stable,
+    int PairCount,
+    string Method)
+{
+    public string Display => Stable && LowerPercent.HasValue && UpperPercent.HasValue
+        ? $"IC 95% [{LowerPercent:+0.00;-0.00;0.00}%, {UpperPercent:+0.00;-0.00;0.00}%]"
+        : "INTERVALO NO ESTABLE / EVIDENCIA PRELIMINAR";
+}
 
 public sealed record BenchmarkAnalysis(
     string Verdict,
+    string EvidenceLevel,
     int CompletedPairs,
     double OffAverageFps,
     double OnAverageFps,
@@ -62,6 +113,13 @@ public sealed record BenchmarkAnalysis(
     double BaselineNoiseAverageFpsPercent,
     double BaselineNoiseLow1Percent,
     double BaselineNoiseP99Percent,
+    ConfidenceInterval AverageFpsConfidenceInterval,
+    ConfidenceInterval P99ConfidenceInterval,
+    double OffRelativeSpikeRatePercent,
+    double OnRelativeSpikeRatePercent,
+    double RelativeSpikeRateImprovementPercent,
+    int TotalExtremeStalls,
+    bool P999Indicative,
     string ReportText);
 
 public sealed class AbBenchmarkSession
@@ -74,9 +132,11 @@ public sealed class AbBenchmarkSession
         int pairs,
         int captureSeconds,
         bool useEcoQos,
-        bool useMemoryPriority)
+        bool useMemoryPriority,
+        BenchmarkScenarioType scenarioType,
+        string? userReportedResolution)
     {
-        if (pairs is < 2 or > 9) throw new ArgumentOutOfRangeException(nameof(pairs));
+        if (pairs is not (3 or 6 or 9)) throw new ArgumentOutOfRangeException(nameof(pairs), "Los niveles válidos son 3, 6 o 9 pares.");
         if (captureSeconds is < 10 or > 300) throw new ArgumentOutOfRangeException(nameof(captureSeconds));
 
         Game = game;
@@ -84,7 +144,12 @@ public sealed class AbBenchmarkSession
         CaptureSeconds = captureSeconds;
         UseEcoQos = useEcoQos;
         UseMemoryPriority = useMemoryPriority;
+        ScenarioType = scenarioType;
+        UserReportedResolution = string.IsNullOrWhiteSpace(userReportedResolution) ? null : userReportedResolution.Trim();
         HyperBoostVersion = Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? "unknown";
+        EnvironmentFingerprint = BenchmarkEnvironmentReader.Capture(
+            game, HyperBoostVersion, pairs, captureSeconds, useEcoQos, useMemoryPriority,
+            scenarioType, UserReportedResolution);
         plan = BuildCounterbalancedPlan(pairs);
 
         var invalid = Path.GetInvalidFileNameChars();
@@ -101,7 +166,13 @@ public sealed class AbBenchmarkSession
     public int CaptureSeconds { get; }
     public bool UseEcoQos { get; }
     public bool UseMemoryPriority { get; }
+    public BenchmarkScenarioType ScenarioType { get; }
+    public string? UserReportedResolution { get; }
     public string HyperBoostVersion { get; }
+    public BenchmarkEnvironmentFingerprint EnvironmentFingerprint { get; }
+    public string? SessionFrameTimeSource { get; private set; }
+    public List<double> GateDurationMs { get; } = [];
+    public List<double> GpuScannerDurationMs { get; } = [];
     public string RootDirectory { get; }
     public IReadOnlyList<BenchmarkPlanItem> Plan => plan;
     public IReadOnlyList<BenchmarkCaptureResult> Results => results;
@@ -113,7 +184,17 @@ public sealed class AbBenchmarkSession
         var expected = Next ?? throw new InvalidOperationException("La sesión A/B ya está completa.");
         if (result.Sequence != expected.Sequence || result.Pair != expected.Pair || result.Mode != expected.Mode)
             throw new InvalidOperationException("La captura no corresponde a la siguiente pasada del plan A/B.");
+        if (SessionFrameTimeSource is null)
+            SessionFrameTimeSource = result.FrameTimeSource;
+        else if (!string.Equals(SessionFrameTimeSource, result.FrameTimeSource, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidDataException($"PASADA INVÁLIDA: la sesión está bloqueada en {SessionFrameTimeSource}, pero la captura entregó {result.FrameTimeSource}.");
         results.Add(result);
+    }
+
+    public void RecordGateOverhead(double gateDurationMs, double gpuScannerDurationMs)
+    {
+        if (gateDurationMs >= 0) GateDurationMs.Add(gateDurationMs);
+        if (gpuScannerDurationMs >= 0) GpuScannerDurationMs.Add(gpuScannerDurationMs);
     }
 
     public BenchmarkAnalysis Analyze()
@@ -130,14 +211,28 @@ public sealed class AbBenchmarkSession
         var jsonPath = Path.Combine(RootDirectory, "HyperBoost-AB-results.json");
         var payload = new
         {
-            schema = 2,
+            schemaVersion = 3,
             hyperBoostVersion = HyperBoostVersion,
             presentMonVersion = "2.5.1",
             presentMonSha256 = PresentMonBenchmarkService.PresentMonExpectedSha256,
             game = Game,
+            environmentFingerprint = EnvironmentFingerprint,
             pairs = Pairs,
             captureSeconds = CaptureSeconds,
+            benchmarkType = ScenarioType.DisplayName(),
+            userReportedResolution = UserReportedResolution,
+            sessionFrameTimeSource = SessionFrameTimeSource,
             onPolicies = new { ecoQos = UseEcoQos, memoryPriority = UseMemoryPriority },
+            overhead = new
+            {
+                gateAverageMs = GateDurationMs.Count == 0 ? (double?)null : GateDurationMs.Average(),
+                gpuScannerAverageMs = GpuScannerDurationMs.Count == 0 ? (double?)null : GpuScannerDurationMs.Average(),
+                captureHyperBoostCpuAveragePercent = results.Count == 0 ? (double?)null : results.Average(x => x.HyperBoostCpuPercent),
+                captureHyperBoostWorkingSetAverageMb = results.Count == 0 ? (double?)null : results.Average(x => x.HyperBoostWorkingSetMb),
+                captureHyperBoostIoAverageMb = results.Count == 0 ? (double?)null : results.Average(x => x.HyperBoostIoMb),
+                presentMonCpuAveragePercent = results.Count == 0 ? (double?)null : results.Average(x => x.PresentMonCpuPercent),
+                presentMonWorkingSetAverageMb = results.Count == 0 ? (double?)null : results.Average(x => x.PresentMonWorkingSetMb)
+            },
             plan,
             createdAt = DateTime.Now,
             results,
@@ -157,11 +252,21 @@ public sealed class AbBenchmarkSession
           .AppendLine($"HyperBoost: {HyperBoostVersion}")
           .AppendLine($"PresentMon: 2.5.1 · SHA-256 {PresentMonBenchmarkService.PresentMonExpectedSha256}")
           .AppendLine($"Juego: {Game.Name} · PID inicial {Game.Id} · {Game.WindowTitle}")
-          .AppendLine($"Plan: {Pairs} pares · {CaptureSeconds}s por pasada · AB/BA contrabalanceado")
-          .AppendLine($"Políticas ON congeladas al crear sesión: EcoQoS={(UseEcoQos ? "sí" : "no")} · Memory Priority={(UseMemoryPriority ? "sí" : "no")}")
+          .AppendLine($"Tipo: {ScenarioType.DisplayName()} · resolución informada: {UserReportedResolution ?? "no informada"}")
+          .AppendLine($"Plan: {Pairs} pares ({EvidenceLabel(Pairs)}) · {CaptureSeconds}s por pasada · AB/BA contrabalanceado")
+          .AppendLine($"Fuente de frametime bloqueada: {SessionFrameTimeSource ?? "se decide en la primera pasada válida"}")
+          .AppendLine($"Políticas ON congeladas: EcoQoS={(UseEcoQos ? "sí" : "no")} · Memory Priority EXPERIMENTAL={(UseMemoryPriority ? "sí" : "no")}")
           .AppendLine(new string('-', 72));
         return sb.ToString();
     }
+
+    public static string EvidenceLabel(int pairs) => pairs switch
+    {
+        3 => "Rápido · resultado preliminar",
+        6 => "Estándar · recomendado",
+        9 => "Extendido · confirmación fuerte",
+        _ => "No válido"
+    };
 
     static List<BenchmarkPlanItem> BuildCounterbalancedPlan(int pairs)
     {
@@ -189,7 +294,7 @@ public sealed class PresentMonBenchmarkService
     public string ValidatePresentMon()
     {
         if (!File.Exists(PresentMonPath))
-            throw new FileNotFoundException($"No se encontró {PresentMonFileName} junto a HyperBoost.exe. Usa el ZIP oficial completo de HyperBoost Beta 0.5.", PresentMonPath);
+            throw new FileNotFoundException($"No se encontró {PresentMonFileName} junto a HyperBoost.exe. Usa el ZIP oficial completo de HyperBoost Beta 0.6.1.", PresentMonPath);
 
         using var stream = File.OpenRead(PresentMonPath);
         var actual = Convert.ToHexString(SHA256.HashData(stream)).ToLowerInvariant();
@@ -204,6 +309,7 @@ public sealed class PresentMonBenchmarkService
         int targetPid,
         int captureSeconds,
         string sessionDirectory,
+        string? requiredFrameTimeSource,
         Action? readyForHotkey,
         CancellationToken cancellationToken = default)
     {
@@ -236,7 +342,10 @@ public sealed class PresentMonBenchmarkService
         AddArg(psi, "--session_name", $"HB_AB_{targetPid}_{plan.Sequence}_{Guid.NewGuid():N}");
 
         using var process = new Process { StartInfo = psi };
+        using var hyperBoostProcess = Process.GetCurrentProcess();
+        var hyperStart = ProcessOverheadSnapshot.Capture(hyperBoostProcess);
         if (!process.Start()) throw new InvalidOperationException("Windows no pudo iniciar PresentMon.");
+        var presentStart = ProcessOverheadSnapshot.Capture(process);
 
         var stdoutTask = process.StandardOutput.ReadToEndAsync();
         var stderrTask = process.StandardError.ReadToEndAsync();
@@ -251,6 +360,8 @@ public sealed class PresentMonBenchmarkService
                 throw new InvalidOperationException($"PresentMon terminó antes de quedar listo (código {process.ExitCode}). {earlyErr} {earlyOut}".Trim());
             }
 
+            var hyperReady = ProcessOverheadSnapshot.Capture(hyperBoostProcess);
+            var presentReady = ProcessOverheadSnapshot.Capture(process);
             readyForHotkey?.Invoke();
             await process.WaitForExitAsync(cancellationToken);
             var stdout = await stdoutTask;
@@ -261,7 +372,16 @@ public sealed class PresentMonBenchmarkService
             if (!File.Exists(csvPath))
                 throw new InvalidDataException("PresentMon terminó sin generar CSV. Confirma que el juego siguió abierto y que pulsaste CTRL+SHIFT+F11 una sola vez para iniciar la captura.");
 
-            var result = ParseCsv(csvPath, plan);
+            var hyperEnd = ProcessOverheadSnapshot.Capture(hyperBoostProcess);
+            var presentEnd = ProcessOverheadSnapshot.Capture(process);
+            var result = ParseCsv(csvPath, plan, requiredFrameTimeSource) with
+            {
+                HyperBoostCpuPercent = ProcessOverheadSnapshot.CpuPercent(hyperStart, hyperEnd),
+                HyperBoostWorkingSetMb = Math.Max(hyperReady.WorkingSetBytes, hyperEnd.WorkingSetBytes) / 1_048_576d,
+                HyperBoostIoMb = ProcessOverheadSnapshot.IoMb(hyperStart, hyperEnd),
+                PresentMonCpuPercent = ProcessOverheadSnapshot.CpuPercent(presentStart, presentEnd),
+                PresentMonWorkingSetMb = Math.Max(presentReady.WorkingSetBytes, presentEnd.WorkingSetBytes) / 1_048_576d
+            };
             var sidecar = Path.ChangeExtension(csvPath, ".result.json");
             await File.WriteAllTextAsync(
                 sidecar,
@@ -283,7 +403,7 @@ public sealed class PresentMonBenchmarkService
         }
     }
 
-    public static BenchmarkCaptureResult ParseCsv(string csvPath, BenchmarkPlanItem plan)
+    public static BenchmarkCaptureResult ParseCsv(string csvPath, BenchmarkPlanItem plan, string? requiredFrameTimeSource = null)
     {
         using var reader = new StreamReader(csvPath, Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
         var headerLine = reader.ReadLine();
@@ -310,29 +430,55 @@ public sealed class PresentMonBenchmarkService
             {
                 if (!index.TryGetValue(metric, out var col) || col >= fields.Count) continue;
                 if (!TryInvariantDouble(fields[col], out var value)) continue;
-                if (value < 0.1 || value > 1000) continue;
+                // 200/500/1000 ms pueden ser freezes reales. Solo se rechazan
+                // valores físicamente inválidos o claramente corruptos (>10 s).
+                if (value < 0.1 || value > 10_000) continue;
                 collected[metric].Add(value);
             }
         }
 
         if (rows < 30) throw new InvalidDataException($"PresentMon solo entregó {rows} filas; la muestra es demasiado pequeña para un benchmark.");
 
-        var source = candidates.FirstOrDefault(x => collected[x].Count >= Math.Max(30, rows * 0.80));
-        if (source is null) throw new InvalidDataException("El CSV no contiene una métrica de frametime utilizable en al menos 80% de las filas.");
+        string? source;
+        if (!string.IsNullOrWhiteSpace(requiredFrameTimeSource))
+        {
+            source = candidates.FirstOrDefault(x => string.Equals(x, requiredFrameTimeSource, StringComparison.OrdinalIgnoreCase));
+            if (source is null)
+                throw new InvalidDataException($"PASADA INVÁLIDA: fuente bloqueada desconocida ({requiredFrameTimeSource}).");
+            if (collected[source].Count < Math.Max(30, rows * 0.80))
+                throw new InvalidDataException($"PASADA INVÁLIDA: la sesión usa {source}, pero esta captura solo tuvo {collected[source].Count}/{rows} valores válidos. No se cambió silenciosamente a otra fuente.");
+        }
+        else
+        {
+            source = candidates.FirstOrDefault(x => collected[x].Count >= Math.Max(30, rows * 0.80));
+            if (source is null) throw new InvalidDataException("PASADA INVÁLIDA: el CSV no contiene una fuente de frametime utilizable en al menos 80% de las filas.");
+        }
 
-        var values = collected[source];
+        var values = collected[source].ToList();
         if (values.Count > 2) values = values.Skip(1).ToList();
-        values.Sort();
         if (values.Count < 30) throw new InvalidDataException("Muestra insuficiente después de limpiar los límites de captura.");
 
         var mean = values.Average();
-        var median = QuantileSorted(values, 0.50);
-        var p95 = QuantileSorted(values, 0.95);
-        var p99 = QuantileSorted(values, 0.99);
-        var p999 = QuantileSorted(values, 0.999);
-        var stutterThreshold = Math.Max(33.333, median * 2.5);
-        var stutters = values.Count(x => x > stutterThreshold);
+        var sorted = values.OrderBy(x => x).ToList();
+        var median = QuantileSorted(sorted, 0.50);
+        var extremeStalls = values.Count(x => x >= 200);
+        var percentileValues = values.Where(x => x < 200).OrderBy(x => x).ToList();
+        var excludedExtreme = extremeStalls;
+        if (percentileValues.Count < 30)
+        {
+            percentileValues = sorted;
+            excludedExtreme = 0;
+        }
+        var p95 = QuantileSorted(percentileValues, 0.95);
+        var p99 = QuantileSorted(percentileValues, 0.99);
+        var p999 = QuantileSorted(percentileValues, 0.999);
+        var severeThreshold = Math.Max(33.333, median * 2.5);
+        var severeStalls = values.Count(x => x > severeThreshold);
+        var relativeSpikes = CountRelativeSpikes(values);
         var duration = values.Sum() / 1000d;
+        var p999TailSamples = Math.Max(1, (int)Math.Ceiling(percentileValues.Count * 0.001));
+        var p999Indicative = p999TailSamples < 20;
+        var invalidData = Math.Max(0, rows - collected[source].Count);
 
         return new BenchmarkCaptureResult(
             plan.Sequence,
@@ -350,48 +496,51 @@ public sealed class PresentMonBenchmarkService
             p95,
             p99,
             p999,
-            stutters,
-            stutterThreshold,
-            stutters * 100d / values.Count);
+            severeStalls,
+            severeThreshold,
+            severeStalls * 100d / values.Count,
+            relativeSpikes,
+            relativeSpikes * 100d / values.Count,
+            extremeStalls,
+            invalidData,
+            excludedExtreme,
+            p999TailSamples,
+            p999Indicative,
+            0, 0, 0, 0, 0);
+    }
+
+    internal static int CountRelativeSpikes(IReadOnlyList<double> frameTimes)
+    {
+        const int window = 31;
+        const int minimumHistory = 15;
+        var count = 0;
+        var insideExcursion = false;
+
+        for (var i = 0; i < frameTimes.Count; i++)
+        {
+            var start = Math.Max(0, i - window);
+            var historyLength = i - start;
+            if (historyLength < minimumHistory) continue;
+            var history = frameTimes.Skip(start).Take(historyLength).OrderBy(x => x).ToList();
+            var localMedian = QuantileSorted(history, 0.5);
+            var threshold = Math.Max(localMedian * 1.8, localMedian + 5.0);
+            var spike = frameTimes[i] >= threshold;
+
+            if (spike && !insideExcursion)
+            {
+                count++;
+                insideExcursion = true;
+            }
+            else if (!spike)
+            {
+                insideExcursion = false;
+            }
+        }
+        return count;
     }
 
     public static string RunSelfTest()
-    {
-        var root = Path.Combine(Path.GetTempPath(), "HyperBoost-BenchmarkSelfTest-" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(root);
-        try
-        {
-            var csv = Path.Combine(root, "synthetic.csv");
-            var sb = new StringBuilder();
-            sb.AppendLine("Application,ProcessID,DisplayedTime,MsBetweenPresents");
-            for (var i = 0; i < 240; i++)
-            {
-                var ms = i is 120 or 180 ? 45.0 : 16.6667;
-                sb.AppendLine($"game.exe,123,{ms.ToString(CultureInfo.InvariantCulture)},{ms.ToString(CultureInfo.InvariantCulture)}");
-            }
-            File.WriteAllText(csv, sb.ToString(), Encoding.UTF8);
-
-            var off = ParseCsv(csv, new BenchmarkPlanItem(1, 1, BenchmarkMode.Off));
-            if (off.Frames < 200 || off.AverageFps is < 50 or > 65 || off.P99FrameTimeMs < 16)
-                throw new InvalidOperationException("Benchmark parser self-test produced implausible metrics.");
-
-            var samples = new List<BenchmarkCaptureResult>();
-            for (var pair = 1; pair <= 3; pair++)
-            {
-                samples.Add(off with { Sequence = pair * 2 - 1, Pair = pair, Mode = BenchmarkMode.Off, AverageFps = 100, Low1Fps = 70, Low01Fps = 55, P95FrameTimeMs = 13, P99FrameTimeMs = 18, StutterRatePercent = 1.5 });
-                samples.Add(off with { Sequence = pair * 2, Pair = pair, Mode = BenchmarkMode.On, AverageFps = 104, Low1Fps = 76, Low01Fps = 60, P95FrameTimeMs = 12, P99FrameTimeMs = 16, StutterRatePercent = 1.0 });
-            }
-            var analysis = BenchmarkAnalyzer.Analyze(samples);
-            if (!analysis.Verdict.StartsWith("MEJORA MEDIBLE", StringComparison.Ordinal))
-                throw new InvalidOperationException("Benchmark analyzer self-test did not recognize a consistent synthetic improvement.");
-
-            return "Benchmark self-test OK";
-        }
-        finally
-        {
-            try { Directory.Delete(root, recursive: true); } catch { }
-        }
-    }
+        => BenchmarkSelfTests.Run();
 
     static void AddArg(ProcessStartInfo psi, string name, string value)
     {
@@ -466,166 +615,5 @@ public sealed class PresentMonBenchmarkService
         }
         fields.Add(current.ToString());
         return fields;
-    }
-}
-
-public static class BenchmarkAnalyzer
-{
-    public static BenchmarkAnalysis Analyze(IReadOnlyList<BenchmarkCaptureResult> captures)
-    {
-        var off = captures.Where(x => x.Mode == BenchmarkMode.Off).ToList();
-        var on = captures.Where(x => x.Mode == BenchmarkMode.On).ToList();
-        if (off.Count == 0 || on.Count == 0)
-            throw new InvalidOperationException("Se necesita al menos una pasada OFF y una ON.");
-
-        var pairs = captures.GroupBy(x => x.Pair)
-            .Select(g => new { Off = g.FirstOrDefault(x => x.Mode == BenchmarkMode.Off), On = g.FirstOrDefault(x => x.Mode == BenchmarkMode.On) })
-            .Where(x => x.Off is not null && x.On is not null)
-            .Select(x => (Off: x.Off!, On: x.On!))
-            .ToList();
-        if (pairs.Count == 0) throw new InvalidOperationException("No hay pares OFF/ON completos.");
-
-        var offAvg = off.Average(x => x.AverageFps);
-        var onAvg = on.Average(x => x.AverageFps);
-        var offLow1 = off.Average(x => x.Low1Fps);
-        var onLow1 = on.Average(x => x.Low1Fps);
-        var offLow01 = off.Average(x => x.Low01Fps);
-        var onLow01 = on.Average(x => x.Low01Fps);
-        var offP95 = off.Average(x => x.P95FrameTimeMs);
-        var onP95 = on.Average(x => x.P95FrameTimeMs);
-        var offP99 = off.Average(x => x.P99FrameTimeMs);
-        var onP99 = on.Average(x => x.P99FrameTimeMs);
-        var offStutter = off.Average(x => x.StutterRatePercent);
-        var onStutter = on.Average(x => x.StutterRatePercent);
-
-        var pairAvg = pairs.Select(x => HigherBetterDelta(x.Off.AverageFps, x.On.AverageFps)).ToList();
-        var pairLow1 = pairs.Select(x => HigherBetterDelta(x.Off.Low1Fps, x.On.Low1Fps)).ToList();
-        var pairLow01 = pairs.Select(x => HigherBetterDelta(x.Off.Low01Fps, x.On.Low01Fps)).ToList();
-        var pairP95 = pairs.Select(x => LowerBetterDelta(x.Off.P95FrameTimeMs, x.On.P95FrameTimeMs)).ToList();
-        var pairP99 = pairs.Select(x => LowerBetterDelta(x.Off.P99FrameTimeMs, x.On.P99FrameTimeMs)).ToList();
-        var pairStutter = pairs.Select(x => LowerBetterDelta(x.Off.StutterRatePercent, x.On.StutterRatePercent)).ToList();
-
-        var avgDelta = pairAvg.Average();
-        var low1Delta = pairLow1.Average();
-        var low01Delta = pairLow01.Average();
-        var p95Delta = pairP95.Average();
-        var p99Delta = pairP99.Average();
-        var stutterDelta = pairStutter.Average();
-
-        var noiseAvg = CoefficientOfVariation(off.Select(x => x.AverageFps));
-        var noiseLow1 = CoefficientOfVariation(off.Select(x => x.Low1Fps));
-        var noiseP99 = CoefficientOfVariation(off.Select(x => x.P99FrameTimeMs));
-        var thresholdAvg = Math.Max(1.0, noiseAvg * 1.5);
-        var thresholdLow1 = Math.Max(1.5, noiseLow1 * 1.5);
-        var thresholdP99 = Math.Max(1.5, noiseP99 * 1.5);
-        var needed = Math.Max(1, (int)Math.Ceiling(pairs.Count * 2d / 3d));
-
-        var avgPositive = avgDelta > thresholdAvg && pairAvg.Count(x => x > 0) >= needed;
-        var lowPositive = low1Delta > thresholdLow1 && pairLow1.Count(x => x > 0) >= needed;
-        var p99Positive = p99Delta > thresholdP99 && pairP99.Count(x => x > 0) >= needed;
-
-        var avgNegative = avgDelta < -thresholdAvg && pairAvg.Count(x => x < 0) >= needed;
-        var lowNegative = low1Delta < -thresholdLow1 && pairLow1.Count(x => x < 0) >= needed;
-        var p99Negative = p99Delta < -thresholdP99 && pairP99.Count(x => x < 0) >= needed;
-
-        string verdict;
-        if (pairs.Count < 3)
-            verdict = "RESULTADO PRELIMINAR · completa al menos 3 pares para separar mejor señal de ruido.";
-        else if (lowNegative || p99Negative || (avgNegative && !lowPositive && !p99Positive))
-            verdict = "REGRESIÓN MEDIBLE · HyperBoost empeoró una métrica primaria por encima del ruido de la línea base.";
-        else if ((lowPositive && p99Positive) || (avgPositive && (lowPositive || p99Positive)))
-            verdict = "MEJORA MEDIBLE · la señal supera el ruido de las pasadas OFF y es consistente entre pares.";
-        else if (avgPositive || lowPositive || p99Positive)
-            verdict = "SEÑAL POSITIVA, AÚN NO CONCLUYENTE · una métrica supera el ruido, pero falta confirmación en otra métrica primaria.";
-        else
-            verdict = "SIN MEJORA DEMOSTRABLE · la diferencia observada queda dentro del ruido o no es consistente entre pares.";
-
-        var report = BuildReport(
-            verdict, pairs.Count, offAvg, onAvg, avgDelta,
-            offLow1, onLow1, low1Delta, offLow01, onLow01, low01Delta,
-            offP95, onP95, p95Delta, offP99, onP99, p99Delta,
-            offStutter, onStutter, stutterDelta,
-            noiseAvg, noiseLow1, noiseP99, captures, pairAvg, pairLow1, pairP99);
-
-        return new BenchmarkAnalysis(
-            verdict,
-            pairs.Count,
-            offAvg, onAvg, avgDelta,
-            offLow1, onLow1, low1Delta,
-            offLow01, onLow01, low01Delta,
-            offP95, onP95, p95Delta,
-            offP99, onP99, p99Delta,
-            offStutter, onStutter, stutterDelta,
-            noiseAvg, noiseLow1, noiseP99,
-            report);
-    }
-
-    static string BuildReport(
-        string verdict,
-        int pairCount,
-        double offAvg, double onAvg, double avgDelta,
-        double offLow1, double onLow1, double low1Delta,
-        double offLow01, double onLow01, double low01Delta,
-        double offP95, double onP95, double p95Delta,
-        double offP99, double onP99, double p99Delta,
-        double offStutter, double onStutter, double stutterDelta,
-        double noiseAvg, double noiseLow1, double noiseP99,
-        IReadOnlyList<BenchmarkCaptureResult> captures,
-        IReadOnlyList<double> pairAvg,
-        IReadOnlyList<double> pairLow1,
-        IReadOnlyList<double> pairP99)
-    {
-        var sb = new StringBuilder();
-        sb.AppendLine("HYPERBOOST A/B BENCHMARK")
-          .AppendLine("========================")
-          .AppendLine(verdict)
-          .AppendLine()
-          .AppendLine($"Pares completos: {pairCount}")
-          .AppendLine($"FPS promedio       OFF {offAvg,8:0.00}   ON {onAvg,8:0.00}   Δ {Signed(avgDelta)}%")
-          .AppendLine($"1% Low (1/p99)     OFF {offLow1,8:0.00}   ON {onLow1,8:0.00}   Δ {Signed(low1Delta)}%")
-          .AppendLine($"0.1% Low (1/p99.9) OFF {offLow01,8:0.00}   ON {onLow01,8:0.00}   Δ {Signed(low01Delta)}%")
-          .AppendLine($"Frametime p95      OFF {offP95,8:0.00}ms ON {onP95,8:0.00}ms mejora {Signed(p95Delta)}%")
-          .AppendLine($"Frametime p99      OFF {offP99,8:0.00}ms ON {onP99,8:0.00}ms mejora {Signed(p99Delta)}%")
-          .AppendLine($"Stutter rate       OFF {offStutter,8:0.000}% ON {onStutter,8:0.000}% mejora {Signed(stutterDelta)}%")
-          .AppendLine()
-          .AppendLine("RUIDO DE LÍNEA BASE (CV entre pasadas OFF)")
-          .AppendLine($"FPS promedio: {noiseAvg:0.00}% · 1% Low: {noiseLow1:0.00}% · p99: {noiseP99:0.00}%")
-          .AppendLine()
-          .AppendLine("DELTA POR PAR (ON vs OFF)");
-
-        for (var i = 0; i < pairAvg.Count; i++)
-            sb.AppendLine($"Par {i + 1}: FPS {Signed(pairAvg[i])}% · 1% Low {Signed(pairLow1[i])}% · p99 mejora {Signed(pairP99[i])}%");
-
-        sb.AppendLine().AppendLine("PASADAS CRUDAS");
-        foreach (var x in captures.OrderBy(x => x.Sequence))
-            sb.AppendLine($"#{x.Sequence:00} P{x.Pair} {x.Mode,-3} · {x.AverageFps:0.00} FPS · 1% {x.Low1Fps:0.00} · 0.1% {x.Low01Fps:0.00} · p99 {x.P99FrameTimeMs:0.00} ms · stutter {x.StutterRatePercent:0.000}% · {x.Frames} frames · fuente {x.FrameTimeSource}");
-
-        sb.AppendLine()
-          .AppendLine("Metodología: plan AB/BA contrabalanceado por pares. 1% Low = 1000 / percentil 99 de frametime; 0.1% Low = 1000 / percentil 99.9. Stutter = frametime > max(33.333 ms, 2.5× mediana). El veredicto exige superar 1.5× la variación relativa observada en OFF (con mínimos conservadores) y consistencia de signo en al menos 2/3 de los pares.")
-          .AppendLine("Los CSV originales de PresentMon se conservan junto a este reporte para auditoría.");
-        return sb.ToString();
-    }
-
-    static string Signed(double value)
-        => value.ToString("+0.00;-0.00;0.00", CultureInfo.InvariantCulture);
-
-    static double HigherBetterDelta(double off, double on)
-        => Math.Abs(off) < 1e-9 ? 0 : (on - off) / off * 100d;
-
-    static double LowerBetterDelta(double off, double on)
-    {
-        if (Math.Abs(off) < 1e-9) return Math.Abs(on) < 1e-9 ? 0 : -100;
-        return (off - on) / off * 100d;
-    }
-
-    static double CoefficientOfVariation(IEnumerable<double> source)
-    {
-        var values = source.ToList();
-        if (values.Count < 2) return 0;
-        var mean = values.Average();
-        if (Math.Abs(mean) < 1e-9) return 0;
-        var sum = values.Sum(x => Math.Pow(x - mean, 2));
-        var sd = Math.Sqrt(sum / (values.Count - 1));
-        return Math.Abs(sd / mean) * 100d;
     }
 }

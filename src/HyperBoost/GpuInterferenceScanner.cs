@@ -14,7 +14,8 @@ public sealed record GpuProcessUsage(
 public sealed record GpuScanResult(
     bool Available,
     string Detail,
-    IReadOnlyList<GpuProcessUsage> Processes)
+    IReadOnlyList<GpuProcessUsage> Processes,
+    double DurationMs)
 {
     public double UsageFor(int pid)
         => Processes.FirstOrDefault(x => x.Pid == pid)?.GpuPercent ?? 0;
@@ -30,6 +31,7 @@ public sealed class GpuInterferenceScanner
 
     GpuScanResult Scan(CancellationToken cancellationToken)
     {
+        var clock = Stopwatch.StartNew();
         try
         {
             var byPid = new Dictionary<int, Dictionary<string, double>>();
@@ -76,7 +78,8 @@ public sealed class GpuInterferenceScanner
             return new(
                 true,
                 "GPU leído desde contadores WDDM de Windows. El porcentaje por proceso usa su motor GPU más ocupado, sin escribir configuración del driver.",
-                rows.OrderByDescending(x => x.GpuPercent).Take(20).ToList());
+                rows.OrderByDescending(x => x.GpuPercent).Take(20).ToList(),
+                clock.Elapsed.TotalMilliseconds);
         }
         catch (OperationCanceledException)
         {
@@ -84,7 +87,7 @@ public sealed class GpuInterferenceScanner
         }
         catch (Exception ex) when (ex is ManagementException or UnauthorizedAccessException or InvalidOperationException)
         {
-            return new(false, "Windows no expuso los contadores GPU WDDM en este equipo/sesión; el Gate seguirá funcionando con CPU, RAM e I/O.", Array.Empty<GpuProcessUsage>());
+            return new(false, "Windows no expuso los contadores GPU WDDM en este equipo/sesión; el Gate seguirá funcionando con CPU, RAM e I/O.", Array.Empty<GpuProcessUsage>(), clock.Elapsed.TotalMilliseconds);
         }
     }
 
