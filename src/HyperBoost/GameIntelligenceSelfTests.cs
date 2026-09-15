@@ -70,6 +70,16 @@ internal static class GameIntelligenceSelfTests
         var isolated = GameEvidenceAnalyzer.Analyze(high.Append(combined), eco);
         Assert(isolated.TotalSessions == 4 && isolated.CompatibleSessions == 4,
             "una combinación EcoQoS+Memory se atribuyó a EcoQoS individual");
+
+        var minorityImprovement = new[]
+        {
+            Session("mi1", "MEJORA MEDIBLE", 6),
+            Session("mi2", "SIN MEJORA DEMOSTRABLE", 6, avg: 0.1, p99: 0.2),
+            Session("mi3", "SIN MEJORA DEMOSTRABLE", 6, avg: 0.2, p99: 0.1),
+            Session("mi4", "SIN MEJORA DEMOSTRABLE", 6, avg: 0.0, p99: 0.2)
+        };
+        Assert(GameEvidenceAnalyzer.Analyze(minorityImprovement, eco).Outcome.StartsWith("SIN BENEFICIO DEMOSTRABLE", StringComparison.Ordinal),
+            "una única mejora entre cuatro sesiones se convirtió en recomendación de mejora");
     }
 
     static void TestContextChangedAndUnknownSettings()

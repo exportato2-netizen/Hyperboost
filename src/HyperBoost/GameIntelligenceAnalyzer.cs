@@ -197,12 +197,27 @@ public static class GameEvidenceAnalyzer
 
     static string Outcome(IReadOnlyList<GameEvidenceSession> eligible, IReadOnlyList<GameEvidenceSession> compatible)
     {
-        if (eligible.Any(x => x.IsMeasuredImprovement) && eligible.Any(x => x.IsMeasuredRegression))
+        var improvements = eligible.Count(x => x.IsMeasuredImprovement);
+        var regressions = eligible.Count(x => x.IsMeasuredRegression);
+        var positiveSignals = eligible.Count(x => x.IsPositiveSignal);
+        var notDemonstrated = eligible.Count - improvements - regressions - positiveSignals;
+        var needed = eligible.Count == 0 ? int.MaxValue : (int)Math.Ceiling(eligible.Count * 2d / 3d);
+        if (improvements > 0 && regressions > 0)
             return "RESULTADOS CONTRADICTORIOS";
-        if (eligible.Any(x => x.IsMeasuredRegression))
-            return eligible.Count(x => x.IsMeasuredRegression) > 1 ? "REGRESIÓN REPETIDA" : "REGRESIÓN OBSERVADA";
-        if (eligible.Any(x => x.IsMeasuredImprovement))
-            return eligible.Count(x => x.IsMeasuredImprovement) > 1 ? "MEJORA REPETIBLE" : "MEJORA OBSERVADA";
+        if (regressions >= needed)
+            return regressions > 1 ? "REGRESIÓN REPETIDA" : "REGRESIÓN OBSERVADA";
+        if (improvements >= needed)
+            return improvements > 1 ? "MEJORA REPETIBLE" : "MEJORA OBSERVADA";
+        if (notDemonstrated >= needed)
+        {
+            if (regressions > 0) return "SIN BENEFICIO DEMOSTRABLE · REGRESIÓN AISLADA";
+            if (improvements > 0) return "SIN BENEFICIO DEMOSTRABLE · MEJORA AISLADA";
+            return "SIN BENEFICIO DEMOSTRABLE";
+        }
+        if (regressions > 0)
+            return "REGRESIÓN AISLADA · BENEFICIO NO DEMOSTRADO";
+        if (improvements > 0 || positiveSignals > 0)
+            return "SEÑAL POSITIVA, AÚN NO CONCLUYENTE";
         if (compatible.Any(x => x.IsPositiveSignal))
             return "SEÑAL POSITIVA, AÚN NO CONCLUYENTE";
         return "SIN BENEFICIO DEMOSTRABLE";
@@ -222,8 +237,10 @@ public static class GameEvidenceAnalyzer
             return $"Aún no recomendar {policy.DisplayName}. Completa al menos una sesión estándar de 6 pares; 3 pares solo exploran una señal.";
         if (outcome.Contains("REGRESIÓN", StringComparison.Ordinal))
             return $"Mantener {policy.DisplayName} desactivado para este juego, este PC y esta huella mientras una sesión nueva no contradiga la regresión.";
-        if (outcome.Contains("MEJORA", StringComparison.Ordinal))
+        if (outcome.StartsWith("MEJORA", StringComparison.Ordinal))
             return $"{policy.DisplayName} mostró una mejora compatible con esta huella. La recomendación es local; no se generaliza a otros PCs, drivers o ajustes.";
+        if (outcome.Contains("SEÑAL POSITIVA", StringComparison.Ordinal))
+            return $"Aún no recomendar {policy.DisplayName}: existe una señal favorable, pero no domina dos tercios de las sesiones elegibles o todavía falta repetición.";
         var context = changed + insufficient > 0 ? $" {changed + insufficient} sesión(es) históricas no suman por contexto/metadata." : "";
         return $"No hay beneficio demostrable de {policy.DisplayName} en las {compatible} sesión(es) compatibles; esto no prueba un efecto exactamente cero.{context}";
     }

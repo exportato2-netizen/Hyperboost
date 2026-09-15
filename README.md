@@ -55,7 +55,7 @@ Una sesión es elegible para evidencia persistente normal cuando tiene al menos 
 | RESULTADOS CONTRADICTORIOS | Hay al menos una mejora medible y una regresión medible compatibles |
 | CONTEXTO CAMBIÓ | La huella actual no tiene sesiones agregables, aunque existe histórico |
 
-La consistencia usa cuatro clases legibles: mejora medible, regresión medible, señal positiva y beneficio no demostrado. El nivel expresa calidad/repetición de evidencia; el resultado expresa dirección. Por eso `SIN BENEFICIO DEMOSTRABLE` puede tener varias sesiones sin convertirse en la afirmación “el efecto es cero”.
+La consistencia usa cuatro clases legibles: mejora medible, regresión medible, señal positiva y beneficio no demostrado. Una recomendación de mejora requiere que la mejora medible domine al menos dos tercios de las sesiones elegibles; una mejora aislada se informa, pero no se transforma en recomendación. El nivel expresa calidad/repetición de evidencia y el resultado expresa dirección. Por eso `SIN BENEFICIO DEMOSTRABLE` puede tener varias sesiones sin convertirse en la afirmación “el efecto es cero”.
 
 ### Gaming Readiness
 
