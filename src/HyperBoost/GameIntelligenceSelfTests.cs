@@ -122,24 +122,7 @@ internal static class GameIntelligenceSelfTests
         try
         {
             var modern = Session("stored-modern", "MEJORA MEDIBLE", 6);
-            var modernPayload = new
-            {
-                schemaVersion = 4,
-                game = new { Id = 10, Name = modern.GameName, WindowTitle = "Synthetic" },
-                environmentFingerprint = modern.Environment,
-                pairs = modern.PairCount,
-                captureSeconds = modern.CaptureSeconds,
-                userReportedResolution = modern.UserReportedResolution,
-                userReportedSettings = modern.UserReportedSettings,
-                sessionFrameTimeSource = modern.SessionFrameTimeSource,
-                onPolicies = new { ecoQos = true, memoryPriority = false },
-                createdAt = modern.CreatedAtUtc,
-                results = Array.Empty<BenchmarkCaptureResult>(),
-                analysis = modern.Analysis
-            };
-            File.WriteAllText(
-                Path.Combine(benchmarks, "modern", "HyperBoost-AB-results.json"),
-                JsonSerializer.Serialize(modernPayload));
+            WriteModernBenchmark(Path.Combine(benchmarks, "modern", "HyperBoost-AB-results.json"), modern);
             File.WriteAllText(
                 Path.Combine(benchmarks, "legacy", "HyperBoost-AB-results.json"),
                 "{\"schemaVersion\":2,\"game\":{\"Name\":\"SyntheticGame\"},\"pairs\":3,\"captureSeconds\":15,\"onPolicies\":{\"ecoQos\":true,\"memoryPriority\":false}}" );
@@ -152,14 +135,43 @@ internal static class GameIntelligenceSelfTests
             Assert(File.Exists(Path.Combine(library, "evidence-library-v1.json")), "persistencia atómica no produjo documento");
             Assert(!File.Exists(Path.Combine(library, "evidence-library-v1.json.tmp")), "quedó temporal tras escritura atómica");
 
+            Directory.CreateDirectory(Path.Combine(benchmarks, "modern-2"));
+            WriteModernBenchmark(
+                Path.Combine(benchmarks, "modern-2", "HyperBoost-AB-results.json"),
+                Session("stored-modern-2", "SIN MEJORA DEMOSTRABLE", 6, avg: 0.2, p99: 0.3));
+            Task.Run(() => service.RefreshImportsAsync()).GetAwaiter().GetResult();
+            Assert(service.Profiles.Sum(x => x.Sessions.Count) == 3, "refresh no importó una sesión posterior");
+            Assert(File.Exists(Path.Combine(library, "evidence-library-v1.json.bak")), "reemplazo atómico no conservó backup anterior");
+            Assert(!File.Exists(Path.Combine(library, "evidence-library-v1.json.tmp")), "quedó temporal tras reemplazo atómico");
+
             var reloaded = new GameIntelligenceService(library, benchmarks);
             Task.Run(() => reloaded.InitializeAsync()).GetAwaiter().GetResult();
-            Assert(reloaded.Profiles.Sum(x => x.Sessions.Count) == 2, "reload duplicó o perdió sesiones importadas");
+            Assert(reloaded.Profiles.Sum(x => x.Sessions.Count) == 3, "reload duplicó o perdió sesiones importadas");
         }
         finally
         {
             try { Directory.Delete(root, true); } catch { }
         }
+    }
+
+    static void WriteModernBenchmark(string path, GameEvidenceSession session)
+    {
+        var payload = new
+        {
+            schemaVersion = 4,
+            game = new { Id = 10, Name = session.GameName, WindowTitle = "Synthetic" },
+            environmentFingerprint = session.Environment,
+            pairs = session.PairCount,
+            captureSeconds = session.CaptureSeconds,
+            userReportedResolution = session.UserReportedResolution,
+            userReportedSettings = session.UserReportedSettings,
+            sessionFrameTimeSource = session.SessionFrameTimeSource,
+            onPolicies = new { ecoQos = session.Policies.EcoQos, memoryPriority = session.Policies.MemoryPriorityExperimental },
+            createdAt = session.CreatedAtUtc,
+            results = Array.Empty<BenchmarkCaptureResult>(),
+            analysis = session.Analysis
+        };
+        File.WriteAllText(path, JsonSerializer.Serialize(payload));
     }
 
     static GameEvidenceSession Session(

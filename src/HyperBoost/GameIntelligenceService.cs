@@ -342,7 +342,10 @@ public sealed class GameIntelligenceService
             }
 
             if (File.Exists(libraryPath))
-                File.Replace(temp, libraryPath, backup, true);
+            {
+                File.Copy(libraryPath, backup, true);
+                File.Replace(temp, libraryPath, null, true);
+            }
             else
                 File.Move(temp, libraryPath);
         }

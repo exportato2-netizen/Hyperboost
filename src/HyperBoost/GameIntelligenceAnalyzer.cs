@@ -143,8 +143,9 @@ public static class GameEvidenceAnalyzer
 
         var outcome = Outcome(eligible, compatible);
         var recommendation = Recommendation(policy, level, outcome, compatible.Count, changed, insufficient);
-        var avg = compatible.Count == 0 ? (double?)null : compatible.Average(x => x.Analysis.AverageFpsDeltaPercent);
-        var p99 = compatible.Count == 0 ? (double?)null : compatible.Average(x => x.Analysis.P99ImprovementPercent);
+        var metricSessions = eligible.Count > 0 ? eligible : compatible.Where(x => !x.IsInvalid).ToList();
+        var avg = metricSessions.Count == 0 ? (double?)null : metricSessions.Average(x => x.Analysis.AverageFpsDeltaPercent);
+        var p99 = metricSessions.Count == 0 ? (double?)null : metricSessions.Average(x => x.Analysis.P99ImprovementPercent);
         return new(
             policy.Key,
             policy.DisplayName,
