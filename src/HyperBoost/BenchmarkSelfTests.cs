@@ -24,7 +24,7 @@ internal static class BenchmarkSelfTests
 
             TestLockedSource(root);
             TestRelativeSpikes();
-            TestIndependentEvidenceFamilies();
+            TestIndependentEvidenceFamilies(baseline);
             TestThreePairsPreliminary(baseline);
             TestSixPairsMeasurable(baseline);
             TestNoisySession(baseline);
@@ -67,11 +67,22 @@ internal static class BenchmarkSelfTests
         Assert(PresentMonBenchmarkService.CountRelativeSpikes(transition) <= 2, "una transición sostenida de carga fue contada como una ráfaga de spikes");
     }
 
-    static void TestIndependentEvidenceFamilies()
+    static void TestIndependentEvidenceFamilies(BenchmarkCaptureResult template)
     {
         Assert(BenchmarkAnalyzer.PrimaryMetricKeys.SequenceEqual(new[] { "AverageFps", "P99FrameTime" }), "jerarquía primaria inesperada");
         Assert(BenchmarkAnalyzer.PrimaryEvidenceFamilies.Distinct(StringComparer.Ordinal).Count() == BenchmarkAnalyzer.PrimaryEvidenceFamilies.Count, "dos transformaciones cuentan como evidencia primaria independiente");
         Assert(BenchmarkAnalyzer.Low1EvidenceFamily == "tail-p99" && !BenchmarkAnalyzer.PrimaryMetricKeys.Contains("Low1Fps"), "1% Low volvió a contar como voto independiente de p99");
+
+        var poisoned = BuildPairs(template, 6, _ => 0.1, _ => 0.2)
+            .Select(x => x with
+            {
+                Low1Fps = x.Mode == BenchmarkMode.On ? 10_000 : 1,
+                Low01Fps = x.Mode == BenchmarkMode.On ? 10_000 : 1
+            })
+            .ToList();
+        var analysis = BenchmarkAnalyzer.Analyze(poisoned);
+        Assert(!analysis.Verdict.StartsWith("MEJORA MEDIBLE", StringComparison.Ordinal), "1%/0.1% Low almacenados influyeron en el veredicto principal");
+        Assert(Math.Abs(analysis.OnLow1Fps - 1000d / analysis.OnP99Ms) < 0.0001, "1% Low no se derivó exclusivamente de p99");
     }
 
     static void TestThreePairsPreliminary(BenchmarkCaptureResult template)
