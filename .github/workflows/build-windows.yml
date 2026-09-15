@@ -7,6 +7,7 @@ on:
   workflow_dispatch:
 
 permissions:
+  actions: read
   contents: read
 
 jobs:
@@ -105,4 +106,63 @@ jobs:
         with:
           name: HyperBoost-Beta-0.6.1-win-x64
           path: HyperBoost-Beta-0.6.1-win-x64.zip
+          if-no-files-found: error
+
+      - name: Prepare exact main artifact transport parts
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $source = 'transport-main-artifact.zip'
+          $headers = @{
+            Authorization = "Bearer $env:GH_TOKEN"
+            Accept = 'application/vnd.github+json'
+            'X-GitHub-Api-Version' = '2022-11-28'
+          }
+          $uri = 'https://api.github.com/repos/${{ github.repository }}/actions/artifacts/10409464936/zip'
+          Invoke-WebRequest -Uri $uri -Headers $headers -OutFile $source
+          $expected = 'a71b586229b9c17be45739ad5a23c96bb595b1e7438bad24904d81edd28ebb52'
+          $actual = (Get-FileHash $source -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($actual -ne $expected) {
+            throw "Main artifact SHA-256 mismatch. Expected $expected, got $actual"
+          }
+          New-Item -ItemType Directory -Path transport -Force | Out-Null
+          $input = [System.IO.File]::OpenRead($source)
+          try {
+            $buffer = New-Object byte[] (24MB)
+            $part = 1
+            while (($read = $input.Read($buffer, 0, $buffer.Length)) -gt 0) {
+              $path = 'transport/main-artifact.part{0:d2}' -f $part
+              $output = [System.IO.File]::Create($path)
+              try { $output.Write($buffer, 0, $read) } finally { $output.Dispose() }
+              $part++
+            }
+          } finally {
+            $input.Dispose()
+          }
+          @(
+            "artifactId=10409464936"
+            "sha256=$expected"
+            "size=$((Get-Item $source).Length)"
+            "parts=$($part - 1)"
+          ) | Set-Content -Encoding ascii transport/manifest.txt
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: HyperBoost-Beta-0.6.1-transport-part-01
+          path: transport/main-artifact.part01
+          if-no-files-found: error
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: HyperBoost-Beta-0.6.1-transport-part-02
+          path: transport/main-artifact.part02
+          if-no-files-found: error
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: HyperBoost-Beta-0.6.1-transport-part-03
+          path: transport/main-artifact.part03
+          if-no-files-found: error
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: HyperBoost-Beta-0.6.1-transport-manifest
+          path: transport/manifest.txt
           if-no-files-found: error
