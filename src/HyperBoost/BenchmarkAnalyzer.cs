@@ -68,8 +68,8 @@ public static class BenchmarkAnalyzer
         var avgCi = BootstrapMeanInterval(pairAvg);
         var p99Ci = BootstrapMeanInterval(pairP99);
         var needed = (int)Math.Ceiling(pairs.Count * 2d / 3d);
-        var avgThreshold = Math.Max(1.0, noiseAvg * 0.75);
-        var p99Threshold = Math.Max(1.5, noiseP99 * 0.75);
+        var avgThreshold = Math.Max(1.0, noiseAvg);
+        var p99Threshold = Math.Max(1.5, noiseP99);
 
         var avgPositive = DecisivePositive(avgDelta, avgThreshold, pairAvg, needed, avgCi);
         var p99Positive = DecisivePositive(p99Delta, p99Threshold, pairP99, needed, p99Ci);
@@ -178,6 +178,7 @@ public static class BenchmarkAnalyzer
           .AppendLine("========================================")
           .AppendLine(verdict)
           .AppendLine($"Nivel de evidencia: {evidence}")
+          .AppendLine($"Pares completos: {pairCount}")
           .AppendLine($"Fuente única de frametime: {source}")
           .AppendLine()
           .AppendLine("MÉTRICAS PRIMARIAS")

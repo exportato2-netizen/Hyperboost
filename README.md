@@ -102,6 +102,8 @@ Para una conclusión fuerte deben concordar:
 
 La variabilidad OFF combina una estimación robusta basada en MAD con una fracción conservadora del CV clásico. Con 3 OFF solo sirve como contexto y nunca habilita evidencia fuerte.
 
+La regla implementada es auditable: `ruido = max(1.4826 × MAD / mediana, 0.5 × CV muestral)`. La magnitud mínima es `max(1.0%, ruido)` para FPS promedio y `max(1.5%, ruido)` para p99. Se exige signo favorable en `ceil(2/3 × pares)` y un intervalo 95% que excluya cero. La sesión se marca demasiado ruidosa antes de emitir una conclusión fuerte si el ruido OFF supera 5% en FPS, 12% en p99, o si la desviación estándar de los deltas supera 8/15 puntos porcentuales respectivamente. Si FPS y p99 entregan señales decisivas opuestas, el resultado es `SIN MEJORA DEMOSTRABLE`, no una afirmación global.
+
 Veredictos posibles:
 
 - `RESULTADO PRELIMINAR`;
