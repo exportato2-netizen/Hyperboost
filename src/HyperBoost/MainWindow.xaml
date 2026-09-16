@@ -1,7 +1,7 @@
 <Window x:Class="HyperBoost.MainWindow"
  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
- Title="HyperBoost Beta 0.6.1" Width="1320" Height="900" MinWidth="1080" MinHeight="720"
+ Title="HyperBoost Beta 0.7" Width="1320" Height="900" MinWidth="1080" MinHeight="720"
  Background="{StaticResource Bg}" WindowStartupLocation="CenterScreen">
  <Grid>
   <Grid.RowDefinitions>
@@ -17,10 +17,10 @@
      <StackPanel Orientation="Horizontal">
       <TextBlock Text="HYPERBOOST" FontSize="28" FontWeight="Bold" Foreground="{StaticResource Accent}"/>
       <Border Margin="12,3,0,2" Padding="9,3" CornerRadius="10" Background="{StaticResource AccentSoft}" BorderBrush="#315F79" BorderThickness="1">
-       <TextBlock Text="BETA 0.6" Foreground="{StaticResource Accent}" FontSize="12" FontWeight="Bold"/>
+       <TextBlock Text="BETA 0.7" Foreground="{StaticResource Accent}" FontSize="12" FontWeight="Bold"/>
       </Border>
      </StackPanel>
-     <TextBlock Margin="0,5,0,0" Text="Beta 0.6.1 · Benchmark Integrity · medir antes de afirmar" Style="{StaticResource TinyMutedText}"/>
+     <TextBlock Margin="0,5,0,0" Text="Beta 0.7 · Game Intelligence · aprender sin generalizar" Style="{StaticResource TinyMutedText}"/>
     </StackPanel>
     <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
      <Border Padding="11,6" CornerRadius="12" Background="{StaticResource SuccessBg}" BorderBrush="#2B6C52" BorderThickness="1" Margin="0,0,8,0">
@@ -56,10 +56,10 @@
         <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
         <StackPanel>
          <TextBlock Text="HyperBoost está diseñado para intervenir solo cuando hay evidencia" FontSize="18" FontWeight="SemiBold" Foreground="{StaticResource Success}"/>
-         <TextBlock Margin="0,6,0,0" Style="{StaticResource MutedText}" Foreground="#BFE9D7" Text="Gaming Persona conserva sus dos políticas temporales y seguras. El Benchmark A/B ahora usa evidencia independiente, intervalos sobre pares completos y una fuente de frametime fija por sesión."/>
+         <TextBlock Margin="0,6,0,0" Style="{StaticResource MutedText}" Foreground="#BFE9D7" Text="Game Hub conserva cada A/B por juego y solo agrega sesiones compatibles. Gaming Persona mantiene exactamente las dos políticas temporales de Beta 0.6.1."/>
         </StackPanel>
         <Border Grid.Column="1" VerticalAlignment="Center" Margin="24,0,0,0" Padding="12,7" Background="#204B3C" CornerRadius="10">
-         <TextBlock Text="UI / UX ONLY" Foreground="{StaticResource Success}" FontWeight="Bold"/>
+         <TextBlock Text="EVIDENCIA LOCAL" Foreground="{StaticResource Success}" FontWeight="Bold"/>
         </Border>
        </Grid>
       </Border>
@@ -82,9 +82,9 @@
        </Border>
        <Border Grid.Column="4" Style="{StaticResource Card}">
         <StackPanel>
-         <TextBlock Text="3 · Comprueba" Style="{StaticResource SectionTitle}"/>
-         <TextBlock Margin="0,7,0,14" Text="Usa el Benchmark A/B para separar una mejora real del ruido normal del PC." Style="{StaticResource MutedText}"/>
-         <TextBlock Text="Ve a Benchmark A/B →" Foreground="{StaticResource Accent}" FontWeight="SemiBold"/>
+         <TextBlock Text="3 · Comprueba y aprende" Style="{StaticResource SectionTitle}"/>
+         <TextBlock Margin="0,7,0,14" Text="Mide A/B y deja que Game Hub construya evidencia específica para cada juego y contexto." Style="{StaticResource MutedText}"/>
+         <TextBlock Text="Ve a Benchmark A/B / Game Hub →" Foreground="{StaticResource Accent}" FontWeight="SemiBold"/>
         </StackPanel>
        </Border>
       </Grid>
@@ -102,16 +102,16 @@
        </StackPanel>
       </Border>
 
-      <Expander Header="ⓘ  ¿Qué cambió exactamente en Beta 0.6.1?" Margin="2,2,0,14">
+      <Expander Header="ⓘ  ¿Qué cambió exactamente en Beta 0.7?" Margin="2,2,0,14">
        <Border Style="{StaticResource SoftCard}" Margin="0,10,0,0">
-        <TextBlock Style="{StaticResource MutedText}" Text="Se corrige el doble conteo de p99/1% Low, se recomiendan 6 pares, se añaden intervalos pareados, fuente fija, spikes relativos, freezes separados, huella del entorno, medición de overhead y Recovery Journal crash-safe. No se añade ningún tweak nuevo."/>
+        <TextBlock Style="{StaticResource MutedText}" Text="Se añaden perfiles locales por juego, Evidence Library, niveles explicables, recomendaciones por política exacta y Gaming Readiness tri-state. La base estadística de 0.6.1 se conserva y no se añade ningún tweak nuevo ni atribución causal de stutter."/>
        </Border>
       </Expander>
 
       <Border Style="{StaticResource WarningCard}">
        <StackPanel>
         <TextBlock Text="Restauración de betas antiguas" Foreground="{StaticResource Warning}" FontWeight="SemiBold" FontSize="16"/>
-        <TextBlock Margin="0,5,0,12" Foreground="#E7D2A3" TextWrapping="Wrap" Text="Este botón existe únicamente para configuraciones guardadas por versiones antiguas. Beta 0.6.1 no añade cambios persistentes de Windows; solo mantiene un journal local para restaurar sus políticas temporales tras un cierre abrupto."/>
+        <TextBlock Margin="0,5,0,12" Foreground="#E7D2A3" TextWrapping="Wrap" Text="Este botón existe únicamente para configuraciones guardadas por versiones antiguas. Beta 0.7 no añade cambios persistentes de Windows; conserva el Recovery Journal de 0.6.1 para sus políticas temporales."/>
         <Button x:Name="RestoreButton" Content="Restaurar cambios de beta anterior" Click="Restore_Click" Style="{StaticResource SecondaryButton}" HorizontalAlignment="Left"/>
        </StackPanel>
       </Border>
@@ -272,6 +272,11 @@
          <TextBlock Text="Resolución informada (opcional)" FontWeight="SemiBold" Margin="0,0,0,6"/>
          <TextBox x:Name="BenchmarkResolutionText" MaxLength="40" Text="" ToolTip="Ejemplo: 2560x1440. HyperBoost no cambia la resolución."/>
         </StackPanel>
+        <StackPanel Margin="0,14,0,0">
+         <TextBlock Text="Etiqueta de ajustes / versión del juego (recomendada)" FontWeight="SemiBold" Margin="0,0,0,6"/>
+         <TextBox x:Name="BenchmarkSettingsText" MaxLength="160" Text="" ToolTip="Ejemplo: Ultra · cap 144 · patch 2.3. HyperBoost no cambia estos ajustes."/>
+         <TextBlock Margin="0,5,0,0" Style="{StaticResource TinyMutedText}" Text="Se usa solo para comparabilidad histórica. Si queda vacía, Game Hub conserva la sesión pero limita la evidencia agregada a BAJA."/>
+        </StackPanel>
        </StackPanel>
       </Border>
 
@@ -316,6 +321,61 @@
 
       <Border Style="{StaticResource WarningCard}">
        <TextBlock TextWrapping="Wrap" Foreground="#E7D2A3" LineHeight="21" Text="3 pares siempre son preliminares; 6 es estándar y 9 extendido. 1% Low = 1000/p99 y no cuenta como evidencia independiente. 0.1% Low/p99.9 se marca indicativo si la cola es pequeña. Una sola fuente de frametime queda bloqueada para toda la sesión."/>
+      </Border>
+     </StackPanel>
+    </ScrollViewer>
+   </TabItem>
+
+   <TabItem Header="◇  Game Hub">
+    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+     <StackPanel Margin="22,4,8,22">
+      <TextBlock Text="Game Hub" Style="{StaticResource PageTitle}"/>
+      <TextBlock Margin="0,5,0,18" Text="Perfiles locales que aprenden únicamente de este PC, este juego y sesiones A/B comparables." Style="{StaticResource MutedText}"/>
+
+      <Border Style="{StaticResource SuccessCard}">
+       <StackPanel>
+        <TextBlock Text="Evidence Library" FontSize="17" FontWeight="SemiBold" Foreground="{StaticResource Success}"/>
+        <TextBlock Margin="0,6,0,0" TextWrapping="Wrap" Foreground="#BFE9D7" LineHeight="21" Text="No descarga perfiles genéricos ni usa machine learning opaco. Driver, ejecutable, fuente, escenario, duración, resolución, ajustes declarados y políticas ON deciden qué sesiones pueden sumarse."/>
+       </StackPanel>
+      </Border>
+
+      <Border Style="{StaticResource Card}">
+       <StackPanel>
+        <TextBlock Text="Perfil local" Style="{StaticResource SectionTitle}"/>
+        <Grid Margin="0,12,0,10">
+         <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+         <ComboBox x:Name="GameHubProfileCombo" DisplayMemberPath="Display" SelectionChanged="GameHubProfileCombo_SelectionChanged" Margin="0,0,10,0"/>
+         <Button x:Name="GameHubRefreshButton" Grid.Column="1" Content="Recargar biblioteca" Click="GameHubRefresh_Click" Style="{StaticResource SecondaryButton}" Margin="0"/>
+        </Grid>
+        <TextBlock x:Name="GameHubStatusText" TextWrapping="Wrap" Style="{StaticResource TinyMutedText}" Text="Cargando perfiles y sesiones anteriores…"/>
+       </StackPanel>
+      </Border>
+
+      <Grid>
+       <Grid.ColumnDefinitions><ColumnDefinition Width="1.15*"/><ColumnDefinition Width="14"/><ColumnDefinition Width="0.85*"/></Grid.ColumnDefinitions>
+       <Border Grid.Column="0" Style="{StaticResource Card}">
+        <StackPanel>
+         <TextBlock Text="Evidencia y recomendaciones" Style="{StaticResource SectionTitle}"/>
+         <TextBlock Margin="0,5,0,10" Style="{StaticResource TinyMutedText}" Text="Una combinación EcoQoS + Memory Priority nunca se atribuye a una política individual."/>
+         <TextBox x:Name="GameHubEvidenceText" Style="{StaticResource CodeBox}" MinHeight="360" TextWrapping="NoWrap" HorizontalScrollBarVisibility="Auto" Text="SIN DATOS"/>
+        </StackPanel>
+       </Border>
+       <Border Grid.Column="2" Style="{StaticResource Card}">
+        <StackPanel>
+         <TextBlock Text="Gaming Readiness" Style="{StaticResource SectionTitle}"/>
+         <TextBlock Margin="0,5,0,10" Style="{StaticResource TinyMutedText}" Text="Lectura puntual tri-state. Reutiliza el Gate existente; no añade un monitor permanente."/>
+         <ComboBox x:Name="GameHubGameProcessCombo" DisplayMemberPath="Display" SelectionChanged="GameHubGameProcessCombo_SelectionChanged"/>
+         <StackPanel Orientation="Horizontal" Margin="0,10,0,10">
+          <Button x:Name="GameHubReadinessButton" Content="Evaluar Readiness" Click="GameHubReadiness_Click"/>
+          <Button x:Name="GameHubProcessesRefreshButton" Content="Actualizar procesos" Click="GameHubProcessesRefresh_Click" Style="{StaticResource SecondaryButton}"/>
+         </StackPanel>
+         <TextBox x:Name="GameHubReadinessText" Style="{StaticResource CodeBox}" MinHeight="275" TextWrapping="Wrap" Text="Selecciona un juego abierto y ejecuta una lectura puntual."/>
+        </StackPanel>
+       </Border>
+      </Grid>
+
+      <Border Style="{StaticResource WarningCard}">
+       <TextBlock TextWrapping="Wrap" Foreground="#E7D2A3" LineHeight="21" Text="CONTEXTO CAMBIÓ conserva el histórico pero no lo suma. SIN BENEFICIO DEMOSTRABLE no significa efecto exactamente cero. Stutter Attribution no es una función estable de 0.7; solo se conservan las métricas ya medidas para investigación futura."/>
       </Border>
      </StackPanel>
     </ScrollViewer>
@@ -384,8 +444,8 @@
 
       <Border Style="{StaticResource Card}">
        <StackPanel>
-        <TextBlock Text="Beta 0.6.1 · Benchmark Integrity" Style="{StaticResource SectionTitle}"/>
-        <TextBlock Margin="0,6,0,0" Style="{StaticResource MutedText}" Text="Esta versión no añade ninguna política de optimización. Endurece la medición A/B, separa métricas equivalentes, añade intervalos pareados y hace crash-safe la restauración de las dos políticas temporales existentes."/>
+        <TextBlock Text="Beta 0.7 · Game Intelligence" Style="{StaticResource SectionTitle}"/>
+        <TextBlock Margin="0,6,0,0" Style="{StaticResource MutedText}" Text="Esta versión no añade políticas de optimización. Guarda evidencia local por juego, clasifica compatibilidad histórica y produce recomendaciones limitadas al contexto observado."/>
        </StackPanel>
       </Border>
      </StackPanel>

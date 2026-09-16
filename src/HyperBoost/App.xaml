@@ -3,7 +3,7 @@
  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
  StartupUri="MainWindow.xaml">
  <Application.Resources>
-  <!-- Beta 0.6.1: UI remains intentionally incremental; no optimization behavior lives here. -->
+  <!-- Beta 0.7: Game Intelligence UI remains local/read-only; no optimization behavior lives here. -->
   <Color x:Key="BgColor">#0D1118</Color>
   <Color x:Key="SidebarColor">#101722</Color>
   <Color x:Key="PanelColor">#151E2B</Color>

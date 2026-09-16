@@ -6,10 +6,10 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>HyperBoost</AssemblyName>
-    <Version>0.6.1</Version>
-    <AssemblyVersion>0.6.1.0</AssemblyVersion>
-    <FileVersion>0.6.1.0</FileVersion>
-    <Description>HyperBoost Beta 0.6.1: benchmark A/B defendible, fuente fija y restauración crash-safe.</Description>
+    <Version>0.7.0</Version>
+    <AssemblyVersion>0.7.0.0</AssemblyVersion>
+    <FileVersion>0.7.0.0</FileVersion>
+    <Description>HyperBoost Beta 0.7: Game Hub, Evidence Library local y Gaming Readiness explicable.</Description>
     <PublishSingleFile>true</PublishSingleFile>
     <PublishTrimmed>false</PublishTrimmed>
     <SelfContained>true</SelfContained>

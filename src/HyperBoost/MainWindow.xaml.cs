@@ -13,6 +13,7 @@ public partial class MainWindow : Window
     readonly SystemEventCoordinator systemEvents = new();
     readonly SelfBackgroundMode selfBackground = new();
     readonly PresentMonBenchmarkService benchmarkService = new();
+    readonly GameIntelligenceService gameIntelligence = new();
 
     CancellationTokenSource? gateCts;
     CancellationTokenSource? focusLossCts;
@@ -53,6 +54,7 @@ public partial class MainWindow : Window
         }
 
         UpdateControls();
+        _ = InitializeGameIntelligenceAsync();
     }
 
     async void Scan_Click(object sender, RoutedEventArgs e)
@@ -117,11 +119,13 @@ public partial class MainWindow : Window
 
     void RefreshProcesses_Click(object sender, RoutedEventArgs e) => RefreshProcesses();
     void BenchmarkRefresh_Click(object sender, RoutedEventArgs e) => RefreshProcesses();
+    void GameHubProcessesRefresh_Click(object sender, RoutedEventArgs e) => RefreshProcesses();
 
     void RefreshProcesses()
     {
         var selectedPid = (GameProcessCombo.SelectedItem as GameProcessCandidate)?.Id;
         var benchmarkSelectedPid = (BenchmarkGameProcessCombo.SelectedItem as GameProcessCandidate)?.Id;
+        var readinessSelectedPid = (GameHubGameProcessCombo.SelectedItem as GameProcessCandidate)?.Id;
         var candidates = persona.GetCandidates();
 
         GameProcessCombo.ItemsSource = candidates;
@@ -136,11 +140,18 @@ public partial class MainWindow : Window
         if (BenchmarkGameProcessCombo.SelectedItem is null && candidates.Count > 0)
             BenchmarkGameProcessCombo.SelectedIndex = 0;
 
+        GameHubGameProcessCombo.ItemsSource = candidates;
+        if (readinessSelectedPid is int readinessPid)
+            GameHubGameProcessCombo.SelectedItem = candidates.FirstOrDefault(x => x.Id == readinessPid);
+        if (GameHubGameProcessCombo.SelectedItem is null && candidates.Count > 0)
+            GameHubGameProcessCombo.SelectedIndex = 0;
+
         UpdateControls();
     }
 
     void GameProcessCombo_SelectionChanged(object sender, SelectionChangedEventArgs e) => UpdateControls();
     void BenchmarkGameProcessCombo_SelectionChanged(object sender, SelectionChangedEventArgs e) => UpdateControls();
+    void GameHubGameProcessCombo_SelectionChanged(object sender, SelectionChangedEventArgs e) => UpdateControls();
 
     async void StartPersona_Click(object sender, RoutedEventArgs e)
     {
@@ -222,6 +233,85 @@ public partial class MainWindow : Window
         }
     }
 
+    async Task InitializeGameIntelligenceAsync()
+    {
+        try
+        {
+            await gameIntelligence.InitializeAsync();
+            RefreshGameHubView();
+        }
+        catch (Exception ex)
+        {
+            GameHubStatusText.Text = "Game Intelligence falló de forma segura: " + ex.Message;
+            GameHubEvidenceText.Text = "La biblioteca no fue modificada. Los JSON de benchmark permanecen en su ubicación original.";
+        }
+        finally
+        {
+            UpdateControls();
+        }
+    }
+
+    async void GameHubRefresh_Click(object sender, RoutedEventArgs e)
+    {
+        SetBusy(true, "Recargando perfiles locales y sesiones A/B…");
+        try
+        {
+            await gameIntelligence.RefreshImportsAsync();
+            RefreshGameHubView();
+            StatusText.Text = gameIntelligence.Status;
+        }
+        catch (Exception ex)
+        {
+            GameHubStatusText.Text = "No se pudo recargar la biblioteca: " + ex.Message;
+        }
+        finally
+        {
+            SetBusy(false);
+        }
+    }
+
+    void GameHubProfileCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        GameHubEvidenceText.Text = gameIntelligence.BuildProfileReport(GameHubProfileCombo.SelectedItem as GameProfile);
+    }
+
+    async void GameHubReadiness_Click(object sender, RoutedEventArgs e)
+    {
+        if (GameHubGameProcessCombo.SelectedItem is not GameProcessCandidate game) return;
+        SetBusy(true, $"Midiendo Gaming Readiness de {game.Name}…");
+        GameHubReadinessText.Text = "Lectura puntual en curso (~1 s). No se aplicará ninguna política.";
+        try
+        {
+            var result = await gate.EvaluateAsync(game.Id, persona);
+            var readiness = GamingReadinessAnalyzer.Analyze(result);
+            GameHubReadinessText.Text = readiness.ToDisplayText();
+            GameHubStatusText.Text = $"Readiness {readiness.State.DisplayName()} · muestra puntual {DateTime.Now:HH:mm:ss} · Gate {result.EvaluationDurationMs:0} ms.";
+            StatusText.Text = "Gaming Readiness completado en modo solo lectura. No se aplicó EcoQoS ni Memory Priority.";
+        }
+        catch (Exception ex)
+        {
+            GameHubReadinessText.Text = "Lectura no disponible: " + ex.Message;
+            StatusText.Text = "Gaming Readiness falló sin aplicar cambios.";
+        }
+        finally
+        {
+            SetBusy(false);
+        }
+    }
+
+    void RefreshGameHubView(string? selectProfileId = null)
+    {
+        var selected = selectProfileId ?? (GameHubProfileCombo.SelectedItem as GameProfile)?.ProfileId;
+        var profiles = gameIntelligence.Profiles.ToList();
+        GameHubProfileCombo.ItemsSource = profiles;
+        if (!string.IsNullOrWhiteSpace(selected))
+            GameHubProfileCombo.SelectedItem = profiles.FirstOrDefault(x => string.Equals(x.ProfileId, selected, StringComparison.Ordinal));
+        if (GameHubProfileCombo.SelectedItem is null && profiles.Count > 0)
+            GameHubProfileCombo.SelectedIndex = 0;
+        GameHubStatusText.Text = gameIntelligence.Status;
+        GameHubEvidenceText.Text = gameIntelligence.BuildProfileReport(GameHubProfileCombo.SelectedItem as GameProfile);
+    }
+
     void BenchmarkCreate_Click(object sender, RoutedEventArgs e)
     {
         if (BenchmarkGameProcessCombo.SelectedItem is not GameProcessCandidate game) return;
@@ -245,12 +335,13 @@ public partial class MainWindow : Window
             var useMemoryPriority = PersonaMemoryCheck.IsChecked == true;
             var scenario = SelectedScenario();
             var resolution = BenchmarkResolutionText.Text;
-            benchmarkSession = new AbBenchmarkSession(game, pairs, seconds, useEcoQos, useMemoryPriority, scenario, resolution);
+            var settings = BenchmarkSettingsText.Text;
+            benchmarkSession = new AbBenchmarkSession(game, pairs, seconds, useEcoQos, useMemoryPriority, scenario, resolution, settings);
             benchmarkPendingPlan = null;
             benchmarkPassArmed = false;
             benchmarkCaptureRunning = false;
             systemEvents.WatchProcessExit(game.Id);
-            BenchmarkStatusText.Text = $"Sesión creada para {game.Name} · {AbBenchmarkSession.EvidenceLabel(pairs)} · {seconds}s · {scenario.DisplayName()} · ON: EcoQoS={(useEcoQos ? "sí" : "no")}, Memory Priority EXPERIMENTAL={(useMemoryPriority ? "sí" : "no")}.";
+            BenchmarkStatusText.Text = $"Sesión creada para {game.Name} · {AbBenchmarkSession.EvidenceLabel(pairs)} · {seconds}s · {scenario.DisplayName()} · ON: EcoQoS={(useEcoQos ? "sí" : "no")}, Memory Priority EXPERIMENTAL={(useMemoryPriority ? "sí" : "no")} · ajustes: {(string.IsNullOrWhiteSpace(settings) ? "no declarados (evidencia histórica limitada)" : settings.Trim())}.";
             BenchmarkResultsText.Text = "Aún no hay capturas. La primera pasada fija la fuente de frametime; las siguientes deben usar exactamente la misma.";
             UpdateBenchmarkPlanText();
         }
@@ -475,8 +566,19 @@ public partial class MainWindow : Window
             {
                 var analysis = session.Analyze();
                 await session.SaveReportAsync(analysis, token);
+                string evidenceStatus;
+                try
+                {
+                    var profile = await gameIntelligence.RecordSessionAsync(session, analysis, token);
+                    RefreshGameHubView(profile.ProfileId);
+                    evidenceStatus = $" Evidence Library actualizada: {profile.Name}.";
+                }
+                catch (Exception ex)
+                {
+                    evidenceStatus = $" El A/B quedó guardado, pero Game Hub no pudo indexarlo ahora: {ex.Message}";
+                }
                 BenchmarkResultsText.Text = analysis.ReportText;
-                BenchmarkStatusText.Text = $"SESIÓN COMPLETA · {analysis.Verdict} Reporte y CSV crudos: {session.RootDirectory}";
+                BenchmarkStatusText.Text = $"SESIÓN COMPLETA · {analysis.Verdict} Reporte y CSV crudos: {session.RootDirectory}.{evidenceStatus}";
                 systemEvents.StopWatchingProcess();
             }
             else
@@ -527,6 +629,7 @@ public partial class MainWindow : Window
         var sb = new StringBuilder();
         sb.AppendLine($"ON congelado: EcoQoS={(benchmarkSession.UseEcoQos ? "sí" : "no")} · Memory Priority EXPERIMENTAL={(benchmarkSession.UseMemoryPriority ? "sí" : "no")}");
         sb.AppendLine($"Evidencia: {AbBenchmarkSession.EvidenceLabel(benchmarkSession.Pairs)} · tipo {benchmarkSession.ScenarioType.DisplayName()}");
+        sb.AppendLine($"Contexto: resolución {benchmarkSession.UserReportedResolution ?? "no informada"} · ajustes {benchmarkSession.UserReportedSettings ?? "no informados (confianza histórica limitada)"}");
         sb.AppendLine($"Fuente: {benchmarkSession.SessionFrameTimeSource ?? "se fijará en la primera pasada válida"}");
         foreach (var item in benchmarkSession.Plan)
         {
@@ -681,9 +784,16 @@ public partial class MainWindow : Window
         BenchmarkDurationCombo.IsEnabled = !busy && !personaLocked && !benchmarkInProgress;
         BenchmarkScenarioCombo.IsEnabled = !busy && !personaLocked && !benchmarkInProgress;
         BenchmarkResolutionText.IsEnabled = !busy && !personaLocked && !benchmarkInProgress;
+        BenchmarkSettingsText.IsEnabled = !busy && !personaLocked && !benchmarkInProgress;
         BenchmarkCreateButton.IsEnabled = !busy && !personaLocked && !gateRunning && !benchmarkCaptureRunning && systemEvents.ForegroundHookAvailable && BenchmarkGameProcessCombo.SelectedItem is GameProcessCandidate && (benchmarkSession is null || benchmarkSession.IsComplete);
         BenchmarkNextButton.IsEnabled = !busy && benchmarkSession is { IsComplete: false } && !benchmarkPassArmed && !benchmarkCaptureRunning && !gateRunning;
         BenchmarkCancelButton.IsEnabled = !busy && benchmarkExists;
+
+        GameHubProfileCombo.IsEnabled = !busy && !benchmarkCaptureRunning;
+        GameHubRefreshButton.IsEnabled = !busy && !benchmarkCaptureRunning;
+        GameHubGameProcessCombo.IsEnabled = !busy && !personaLocked && !gateRunning && !benchmarkInProgress;
+        GameHubProcessesRefreshButton.IsEnabled = !busy && !personaLocked && !gateRunning && !benchmarkInProgress;
+        GameHubReadinessButton.IsEnabled = !busy && !personaLocked && !gateRunning && !benchmarkInProgress && GameHubGameProcessCombo.SelectedItem is GameProcessCandidate;
     }
 
     protected override void OnClosed(EventArgs e)

@@ -25,6 +25,7 @@ public sealed record BenchmarkEnvironmentFingerprint(
     bool MemoryPriorityExperimentalEnabled,
     BenchmarkScenarioType ScenarioType,
     string? UserReportedResolution,
+    string? UserReportedSettings,
     DateTime CreatedAtUtc,
     int CaptureSeconds,
     int PlannedPairs);
@@ -39,7 +40,8 @@ public static class BenchmarkEnvironmentReader
         bool useEcoQos,
         bool useMemoryPriority,
         BenchmarkScenarioType scenarioType,
-        string? userReportedResolution)
+        string? userReportedResolution,
+        string? userReportedSettings)
     {
         var cpu = "No detectado";
         var gpus = new List<string>();
@@ -83,7 +85,7 @@ public static class BenchmarkEnvironmentReader
         }
 
         return new(
-            3,
+            4,
             Guid.NewGuid().ToString("N"),
             hyperBoostVersion,
             $"{RuntimeInformation.OSDescription} · {Environment.OSVersion.Version}",
@@ -103,6 +105,7 @@ public static class BenchmarkEnvironmentReader
             useMemoryPriority,
             scenarioType,
             string.IsNullOrWhiteSpace(userReportedResolution) ? null : userReportedResolution.Trim(),
+            string.IsNullOrWhiteSpace(userReportedSettings) ? null : userReportedSettings.Trim(),
             DateTime.UtcNow,
             captureSeconds,
             pairs);

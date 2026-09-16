@@ -135,7 +135,8 @@ public sealed class AbBenchmarkSession
         bool useEcoQos,
         bool useMemoryPriority,
         BenchmarkScenarioType scenarioType,
-        string? userReportedResolution)
+        string? userReportedResolution,
+        string? userReportedSettings = null)
     {
         if (pairs is not (3 or 6 or 9)) throw new ArgumentOutOfRangeException(nameof(pairs), "Los niveles válidos son 3, 6 o 9 pares.");
         if (captureSeconds is < 10 or > 300) throw new ArgumentOutOfRangeException(nameof(captureSeconds));
@@ -147,10 +148,11 @@ public sealed class AbBenchmarkSession
         UseMemoryPriority = useMemoryPriority;
         ScenarioType = scenarioType;
         UserReportedResolution = string.IsNullOrWhiteSpace(userReportedResolution) ? null : userReportedResolution.Trim();
+        UserReportedSettings = string.IsNullOrWhiteSpace(userReportedSettings) ? null : userReportedSettings.Trim();
         HyperBoostVersion = Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? "unknown";
         EnvironmentFingerprint = BenchmarkEnvironmentReader.Capture(
             game, HyperBoostVersion, pairs, captureSeconds, useEcoQos, useMemoryPriority,
-            scenarioType, UserReportedResolution);
+            scenarioType, UserReportedResolution, UserReportedSettings);
         plan = BuildCounterbalancedPlan(pairs);
 
         var invalid = Path.GetInvalidFileNameChars();
@@ -169,6 +171,7 @@ public sealed class AbBenchmarkSession
     public bool UseMemoryPriority { get; }
     public BenchmarkScenarioType ScenarioType { get; }
     public string? UserReportedResolution { get; }
+    public string? UserReportedSettings { get; }
     public string HyperBoostVersion { get; }
     public BenchmarkEnvironmentFingerprint EnvironmentFingerprint { get; }
     public string? SessionFrameTimeSource { get; private set; }
@@ -212,7 +215,7 @@ public sealed class AbBenchmarkSession
         var jsonPath = Path.Combine(RootDirectory, "HyperBoost-AB-results.json");
         var payload = new
         {
-            schemaVersion = 3,
+            schemaVersion = 4,
             hyperBoostVersion = HyperBoostVersion,
             presentMonVersion = "2.5.1",
             presentMonSha256 = PresentMonBenchmarkService.PresentMonExpectedSha256,
@@ -222,6 +225,7 @@ public sealed class AbBenchmarkSession
             captureSeconds = CaptureSeconds,
             benchmarkType = ScenarioType.DisplayName(),
             userReportedResolution = UserReportedResolution,
+            userReportedSettings = UserReportedSettings,
             sessionFrameTimeSource = SessionFrameTimeSource,
             onPolicies = new { ecoQos = UseEcoQos, memoryPriority = UseMemoryPriority },
             overhead = new
@@ -255,6 +259,7 @@ public sealed class AbBenchmarkSession
           .AppendLine($"PresentMon: 2.5.1 · SHA-256 {PresentMonBenchmarkService.PresentMonExpectedSha256}")
           .AppendLine($"Juego: {Game.Name} · PID inicial {Game.Id} · {Game.WindowTitle}")
           .AppendLine($"Tipo: {ScenarioType.DisplayName()} · resolución informada: {UserReportedResolution ?? "no informada"}")
+          .AppendLine($"Ajustes/versión del juego: {UserReportedSettings ?? "no informados · la evidencia histórica quedará limitada"}")
           .AppendLine($"Plan: {Pairs} pares ({EvidenceLabel(Pairs)}) · {CaptureSeconds}s por pasada · AB/BA contrabalanceado")
           .AppendLine($"Fuente de frametime bloqueada: {SessionFrameTimeSource ?? "se decide en la primera pasada válida"}")
           .AppendLine($"Políticas ON congeladas: EcoQoS={(UseEcoQos ? "sí" : "no")} · Memory Priority EXPERIMENTAL={(UseMemoryPriority ? "sí" : "no")}")
@@ -297,7 +302,7 @@ public sealed class PresentMonBenchmarkService
     public string ValidatePresentMon()
     {
         if (!File.Exists(PresentMonPath))
-            throw new FileNotFoundException($"No se encontró {PresentMonFileName} junto a HyperBoost.exe. Usa el ZIP oficial completo de HyperBoost Beta 0.6.1.", PresentMonPath);
+            throw new FileNotFoundException($"No se encontró {PresentMonFileName} junto a HyperBoost.exe. Usa el ZIP oficial completo de HyperBoost Beta 0.7.", PresentMonPath);
 
         using var stream = File.OpenRead(PresentMonPath);
         var actual = Convert.ToHexString(SHA256.HashData(stream)).ToLowerInvariant();
